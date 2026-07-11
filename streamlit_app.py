@@ -124,7 +124,7 @@ with tab_vehicles:
         st.dataframe(pd.DataFrame(vehicles)[["name", "plate", "year", "status"]], use_container_width=True, hide_index=True)
 
 with tab_operations:
-    st.subheader("Abastecimento")
+    st.subheader("Operação de veículos")
     if not vehicles:
         st.info("Cadastre um veículo para registrar operações.")
     else:
@@ -143,6 +143,53 @@ with tab_operations:
                 else:
                     repo.add("fuel", {"vehicle_id": vehicle["id"], "liters": liters, "cost": cost, "fuel_date": fuel_date, "odometer": odometer})
                     st.rerun()
+        st.divider()
+        left, right = st.columns(2)
+        with left:
+            st.subheader("Abrir check-in")
+            active_drivers = [driver for driver in drivers if driver.get("status") == "Ativo"]
+            available_vehicles = [vehicle for vehicle in vehicles if vehicle.get("status") == "Disponível"]
+            if not active_drivers or not available_vehicles:
+                st.info("É necessário ter um motorista ativo e um veículo disponível.")
+            else:
+                vehicle_options = {vehicle_label(vehicle): vehicle for vehicle in available_vehicles}
+                driver_options = {driver["name"]: driver for driver in active_drivers}
+                with st.form("new_checkin", clear_on_submit=True):
+                    selected_vehicle = st.selectbox("Veículo", list(vehicle_options), key="checkin_vehicle")
+                    selected_driver = st.selectbox("Motorista", list(driver_options))
+                    start = st.number_input("Odômetro de saída", min_value=0.0, step=1.0)
+                    checkin_date = st.date_input("Data de saída", value=date.today(), key="checkin_date")
+                    notes = st.text_area("Observações")
+                    if st.form_submit_button("Abrir check-in"):
+                        vehicle = vehicle_options[selected_vehicle]
+                        if start < vehicle_odometer(vehicle["id"], fuel, maintenance, checkins):
+                            st.error("O odômetro não pode ser menor que o último registro.")
+                        else:
+                            repo.add("checkins", {"vehicle_id": vehicle["id"], "driver_id": driver_options[selected_driver]["id"], "checkin_at": checkin_date, "checkout_at": "", "odometer_start": start, "odometer_end": "", "notes": notes.strip()})
+                            repo.update("vehicles", vehicle["id"], {"status": "Em uso"})
+                            st.rerun()
+        with right:
+            st.subheader("Finalizar check-in")
+            open_checkins = [item for item in checkins if not item.get("checkout_at")]
+            if not open_checkins:
+                st.info("Não há check-ins abertos.")
+            else:
+                checkin_options = {
+                    f"{vehicle_label(next(v for v in vehicles if v['id'] == item['vehicle_id']))} · {item['checkin_at']}": item
+                    for item in open_checkins
+                }
+                with st.form("checkout", clear_on_submit=True):
+                    selected_checkin = st.selectbox("Check-in", list(checkin_options))
+                    end = st.number_input("Odômetro de chegada", min_value=0.0, step=1.0)
+                    checkout_date = st.date_input("Data de chegada", value=date.today(), key="checkout_date")
+                    if st.form_submit_button("Finalizar check-in"):
+                        checkin = checkin_options[selected_checkin]
+                        if end < as_number(checkin.get("odometer_start")):
+                            st.error("O odômetro de chegada não pode ser menor que o de saída.")
+                        else:
+                            repo.update("checkins", checkin["id"], {"checkout_at": checkout_date, "odometer_end": end})
+                            repo.update("vehicles", checkin["vehicle_id"], {"status": "Disponível"})
+                            st.rerun()
 
 with tab_maintenance:
     st.subheader("Registrar manutenção")
