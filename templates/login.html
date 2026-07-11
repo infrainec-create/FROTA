@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FrotaControl — Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script>
+        // Theme initialization
+        const getPreferredTheme = () => {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme) return savedTheme;
+            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        };
+        document.documentElement.setAttribute('data-theme', getPreferredTheme());
+    </script>
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: var(--bg-primary);
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .login-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4);
+            padding: 2.5rem;
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+            animation: fadeIn 0.4s ease;
+        }
+
+        .login-brand {
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .login-brand h2 {
+            font-size: 1.75rem;
+            letter-spacing: -0.5px;
+            background: linear-gradient(to right, #a5b4fc, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .login-desc {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-top: -1rem;
+            margin-bottom: 2rem;
+        }
+
+        .alert-error {
+            background-color: var(--danger-light);
+            border: 1px solid var(--danger);
+            color: #f87171;
+            border-radius: 8px;
+            padding: 0.75rem;
+            margin-bottom: 1.5rem;
+            font-size: 0.85rem;
+            text-align: left;
+        }
+
+        .login-footer {
+            margin-top: 1.5rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        
+        .login-footer code {
+            background-color: var(--bg-primary);
+            padding: 0.15rem 0.35rem;
+            border-radius: 4px;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <!-- Theme Toggle Button -->
+    <button id="theme-toggle" class="btn" style="position: absolute; top: 1.5rem; right: 1.5rem; background: var(--bg-card); border: 1px solid var(--border-color); padding: 0.4rem 0.8rem; border-radius: 50px; font-size: 1.1rem; color: var(--text-primary); cursor: pointer; transition: var(--transition); z-index: 100;">
+        🌓
+    </button>
+    <div class="login-card">
+        <div class="login-brand">
+            <span style="font-size: 2rem;">⚡</span>
+            <h2>FrotaControl</h2>
+        </div>
+        <p class="login-desc">Insira suas credenciais para acessar o painel</p>
+
+        {% for category, message in get_flashed_messages(with_categories=true) %}
+            <div class="alert-error">⚠️ {{ message }}</div>
+        {% endfor %}
+
+        <form action="/login" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group" style="text-align: left;">
+                <label for="username">Usuário</label>
+                <input id="username" name="username" placeholder="Nome de usuário" required autofocus>
+            </div>
+            <div class="form-group" style="text-align: left;">
+                <label for="password">Senha</label>
+                <input id="password" name="password" type="password" placeholder="Sua senha" required>
+            </div>
+            <button type="submit" class="btn btn-primary" style="margin-top: 0.5rem; padding: 0.75rem;">Entrar no Sistema</button>
+        </form>
+
+        <div class="login-footer">
+            <p>Use as credenciais fornecidas pelo administrador.</p>
+            <p style="margin-top: 0.5rem;">Não tem uma conta? <a href="/register" style="color: var(--primary); text-decoration: none; font-weight: 600;">Solicitar cadastro</a></p>
+        </div>
+    </div>
+    <script>
+        const themeToggleBtn = document.getElementById('theme-toggle');
+        if (themeToggleBtn) {
+            themeToggleBtn.addEventListener('click', () => {
+                const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+                const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                document.documentElement.setAttribute('data-theme', newTheme);
+                localStorage.setItem('theme', newTheme);
+            });
+        }
+    </script>
+</body>
+</html>

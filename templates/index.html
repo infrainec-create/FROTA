@@ -1,0 +1,1491 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Gestão de Frota — Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Theme initialization
+        const getPreferredTheme = () => {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme) return savedTheme;
+            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        };
+        document.documentElement.setAttribute('data-theme', getPreferredTheme());
+    </script>
+</head>
+<body>
+    <script>
+        const CSRF_TOKEN = {{ csrf_token()|tojson }};
+        // Mantém os formulários protegidos inclusive os criados dinamicamente pela interface.
+        document.addEventListener('submit', (event) => {
+            const form = event.target;
+            if (form.method.toLowerCase() === 'post' && !form.querySelector('[name="csrf_token"]')) {
+                const input = document.createElement('input');
+                input.type = 'hidden'; input.name = 'csrf_token'; input.value = CSRF_TOKEN;
+                form.appendChild(input);
+            }
+        }, true);
+    </script>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="brand">
+                <span class="brand-icon">⚡</span>
+                <h2>FrotaControl</h2>
+            </div>
+            <nav class="nav-menu">
+                <button class="nav-item active" onclick="switchTab('dashboard')">
+                    <span class="icon">📊</span> Painel Geral
+                </button>
+                {% if session.role == 'admin' %}
+                <button class="nav-item" onclick="switchTab('vehicles')">
+                    <span class="icon">🚗</span> Veículos
+                </button>
+                <button class="nav-item" onclick="switchTab('drivers')">
+                    <span class="icon">👨‍✈️</span> Motoristas
+                </button>
+                {% endif %}
+                <button class="nav-item" onclick="switchTab('checkins')">
+                    <span class="icon">🔑</span> Check-in / Out
+                </button>
+                {% if session.role == 'admin' %}
+                <button class="nav-item" onclick="switchTab('maintenance')">
+                    <span class="icon">🔧</span> Manutenções
+                </button>
+                <button class="nav-item" onclick="switchTab('fuel')">
+                    <span class="icon">⛽</span> Combustível
+                </button>
+                <button class="nav-item" onclick="switchTab('fines')">
+                    <span class="icon">📄</span> Multas
+                </button>
+                <button class="nav-item" onclick="switchTab('reports')">
+                    <span class="icon">📈</span> Custos & Viabilidade
+                </button>
+                <button class="nav-item" onclick="switchTab('users-admin')">
+                    <span class="icon">👥</span> Usuários
+                </button>
+                {% endif %}
+            </nav>
+            <div class="sidebar-footer">
+                <p>Status do Sistema: <strong>Online</strong></p>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <header class="topbar">
+                <h1 id="page-title">Painel Geral</h1>
+                <div style="display: flex; gap: 1rem; align-items: center;">
+                    <button id="theme-toggle" class="btn" style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 0.4rem 0.8rem; border-radius: 50px; font-size: 1.1rem; color: var(--text-primary); cursor: pointer; transition: var(--transition); display: flex; align-items: center; justify-content: center;">
+                        🌓
+                    </button>
+                    <div class="user-profile">
+                        <span class="user-avatar">👤</span>
+                        <span class="user-name">{{ session.username }} ({{ session.role|capitalize }})</span>
+                    </div>
+                    <form action="/logout" method="post" style="margin: 0; display: inline-block;">
+                        <button type="submit" class="btn btn-sm btn-danger" style="padding: 0.35rem 0.75rem; border-radius: 50px;">Sair</button>
+                    </form>
+                </div>
+            </header>
+            {% for category, message in get_flashed_messages(with_categories=true) %}
+                <div class="alert-{{ category }}" role="status" style="margin-bottom: 1rem; padding: .75rem; border-radius: 8px; background: var(--bg-card); border: 1px solid var(--border-color);">{{ message }}</div>
+            {% endfor %}
+
+            <!-- TAB: Dashboard -->
+            <div id="tab-dashboard" class="tab-content active">
+                {% if alerts %}
+                    <div class="alerts-container" style="margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem;">
+                        {% for alert in alerts %}
+                            <div class="alert-box alert-{{ alert.type }}" style="background-color: {% if alert.type == 'danger' %}var(--danger-light){% else %}var(--warning-light){% endif %}; border: 1px solid {% if alert.type == 'danger' %}var(--danger){% else %}var(--warning){% endif %}; border-radius: var(--border-radius); padding: 1rem; color: {% if alert.type == 'danger' %}#f87171{% else %}#fbbf24{% endif %}; display: flex; align-items: center; justify-content: space-between;">
+                                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                    <span style="font-size: 1.2rem;">⚠️</span>
+                                    <div style="text-align: left;">
+                                        <strong style="text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; display: block; margin-bottom: 0.15rem;">{{ alert.category }}</strong>
+                                        <span style="font-size: 0.85rem; color: var(--text-primary);">{{ alert.message }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Total de Veículos</span>
+                            <span class="stat-icon vehicle-color">🚗</span>
+                        </div>
+                        <div class="stat-value">{{ stats.total_vehicles }}</div>
+                        <div class="stat-desc">Cadastrados no sistema</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Total de Motoristas</span>
+                            <span class="stat-icon driver-color">👨‍✈️</span>
+                        </div>
+                        <div class="stat-value">{{ stats.total_drivers }}</div>
+                        <div class="stat-desc">Ativos e inativos</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Veículos em Uso</span>
+                            <span class="stat-icon checkin-color">🔑</span>
+                        </div>
+                        <div class="stat-value">{{ stats.active_checkins }}</div>
+                        <div class="stat-desc">Check-ins ativos no momento</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Custos de Manutenção</span>
+                            <span class="stat-icon maint-color">🔧</span>
+                        </div>
+                        <div class="stat-value">R$ {{ "%.2f"|format(stats.total_maintenance_cost) }}</div>
+                        <div class="stat-desc">Valor total acumulado</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Custos de Combustível</span>
+                            <span class="stat-icon fuel-color">⛽</span>
+                        </div>
+                        <div class="stat-value">R$ {{ "%.2f"|format(stats.total_fuel_cost) }}</div>
+                        <div class="stat-desc">Valor total abastecido</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Multas Pendentes</span>
+                            <span class="stat-icon fine-color">📄</span>
+                        </div>
+                        <div class="stat-value">R$ {{ "%.2f"|format(stats.total_fines_cost) }}</div>
+                        <div class="stat-desc">Aguardando pagamento</div>
+                    </div>
+                </div>
+
+                <!-- Charts Section -->
+                <div class="dashboard-widgets" style="margin-bottom: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));">
+                    <div class="widget-card">
+                        <h3>Distribuição de Custos da Frota</h3>
+                        <div style="position: relative; height: 180px; width: 100%;">
+                            <canvas id="costsChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="widget-card">
+                        <h3>Disponibilidade dos Veículos</h3>
+                        <div style="position: relative; height: 180px; width: 100%;">
+                            <canvas id="statusChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-widgets">
+                    <div class="widget-card">
+                        <h3>Veículos Recentes</h3>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Nome</th>
+                                        <th>Placa</th>
+                                        <th>Ano</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for vehicle in vehicles[:5] %}
+                                    <tr>
+                                        <td><strong>{{ vehicle.name }}</strong></td>
+                                        <td><code class="plate-badge">{{ vehicle.plate }}</code></td>
+                                        <td>{{ vehicle.year }}</td>
+                                        <td>
+                                            <span class="status-badge {% if vehicle.status == 'Disponível' %}status-green{% elif vehicle.status == 'Em uso' %}status-orange{% else %}status-red{% endif %}">
+                                                {{ vehicle.status }}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="4" class="no-data">Nenhum veículo cadastrado.</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="widget-card">
+                        <h3>Últimas Atividades (Check-ins)</h3>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Veículo</th>
+                                        <th>Motorista</th>
+                                        <th>Check-in</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in checkins[:5] %}
+                                    <tr>
+                                        <td>{{ item.vehicle_name or 'ID ' ~ item.vehicle_id }}</td>
+                                        <td>{{ item.driver_name or 'ID ' ~ item.driver_id }}</td>
+                                        <td>{{ item.checkin_at }}</td>
+                                        <td>
+                                            {% if item.checkout_at %}
+                                            <span class="status-badge status-green">Finalizado</span>
+                                            {% else %}
+                                            <span class="status-badge status-orange">Em Uso</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="4" class="no-data">Nenhuma atividade recente.</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: Vehicles -->
+            <div id="tab-vehicles" class="tab-content">
+                <div class="section-layout">
+                    <div class="form-card">
+                        <h3>Cadastrar Veículo</h3>
+                        <form action="/vehicles" method="post">
+                            <div class="form-group">
+                                <label for="v-name">Nome / Modelo</label>
+                                <input id="v-name" name="name" placeholder="Ex: Chevrolet Onix" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="v-plate">Placa</label>
+                                <input id="v-plate" name="plate" placeholder="Ex: ABC-1234" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="v-year">Ano</label>
+                                <input id="v-year" name="year" type="number" placeholder="Ex: 2023" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="v-status">Status Inicial</label>
+                                <select id="v-status" name="status">
+                                    <option>Disponível</option>
+                                    <option>Em uso</option>
+                                    <option>Manutenção</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Cadastrar</button>
+                        </form>
+                    </div>
+
+                    <div class="list-card">
+                        <h3>Frota de Veículos</h3>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Nome</th>
+                                        <th>Placa</th>
+                                        <th>Ano</th>
+                                        <th>Status</th>
+                                        <th>Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for vehicle in vehicles %}
+                                    <tr>
+                                        <td>#{{ vehicle.id }}</td>
+                                        <td><strong>{{ vehicle.name }}</strong></td>
+                                        <td><code class="plate-badge">{{ vehicle.plate }}</code></td>
+                                        <td>{{ vehicle.year }}</td>
+                                        <td>
+                                            <span class="status-badge {% if vehicle.status == 'Disponível' %}status-green{% elif vehicle.status == 'Em uso' %}status-orange{% else %}status-red{% endif %}">
+                                                {{ vehicle.status }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <form action="/vehicles/{{ vehicle.id }}/delete" method="post" onsubmit="return confirm('Tem certeza que deseja excluir este veículo?');" style="display:inline;">
+                                                <button type="submit" class="btn btn-sm btn-danger">Excluir</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="6" class="no-data">Nenhum veículo cadastrado.</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: Drivers -->
+            <div id="tab-drivers" class="tab-content">
+                <div class="section-layout">
+                    <div class="form-card">
+                        <h3>Cadastrar Motorista</h3>
+                        <form action="/drivers" method="post">
+                            <div class="form-group">
+                                <label for="d-name">Nome Completo</label>
+                                <input id="d-name" name="name" placeholder="Ex: João Silva" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="d-cpf">CPF</label>
+                                <input id="d-cpf" name="cpf" placeholder="Ex: 123.456.789-00" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="d-phone">Telefone</label>
+                                <input id="d-phone" name="phone" placeholder="Ex: (11) 99999-9999" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="d-license">CNH</label>
+                                <input id="d-license" name="license" placeholder="Ex: 123456789" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="d-license-expiry">Vencimento da CNH</label>
+                                <input id="d-license-expiry" name="license_expiry" type="date" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="d-status">Status</label>
+                                <select id="d-status" name="status">
+                                    <option>Ativo</option>
+                                    <option>Inativo</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Cadastrar</button>
+                        </form>
+                    </div>
+
+                    <div class="list-card">
+                        <h3>Motoristas Cadastrados</h3>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Nome</th>
+                                        <th>CPF</th>
+                                        <th>Telefone</th>
+                                        <th>CNH / Vencimento</th>
+                                        <th>Status</th>
+                                        <th>Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for driver in drivers %}
+                                    <tr>
+                                        <td>#{{ driver.id }}</td>
+                                        <td><strong>{{ driver.name }}</strong></td>
+                                        <td>{{ driver.cpf|mask_cpf }}</td>
+                                        <td>{{ driver.phone }}</td>
+                                        <td>
+                                            <code class="license-badge">{{ driver.license }}</code>
+                                            {% if driver.license_expiry %}
+                                                <br><small class="text-subtle">Vence: {{ driver.license_expiry }}</small>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <span class="status-badge {% if driver.status == 'Ativo' %}status-green{% else %}status-red{% endif %}">
+                                                {{ driver.status }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <form action="/drivers/{{ driver.id }}/delete" method="post" onsubmit="return confirm('Tem certeza que deseja excluir este motorista?');" style="display:inline;">
+                                                <button type="submit" class="btn btn-sm btn-danger">Excluir</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="7" class="no-data">Nenhum motorista cadastrado.</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: Check-ins -->
+            <div id="tab-checkins" class="tab-content">
+                <div class="section-layout">
+                    <div class="form-card">
+                        <h3>Registrar Uso (Check-in)</h3>
+                        <form action="/checkins" method="post">
+                            <div class="form-group">
+                                <label for="c-vehicle">Veículo</label>
+                                <select id="c-vehicle" name="vehicle_id" required>
+                                    <option value="" disabled selected>Selecione um veículo</option>
+                                    {% for vehicle in vehicles %}
+                                        <option value="{{ vehicle.id }}">{{ vehicle.name }} ({{ vehicle.plate }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="c-driver">Motorista</label>
+                                <select id="c-driver" name="driver_id" required>
+                                    <option value="" disabled selected>Selecione um motorista</option>
+                                    {% for driver in drivers %}
+                                        <option value="{{ driver.id }}">{{ driver.name }} ({{ driver.cpf }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="c-date">Data de Entrada</label>
+                                <input id="c-date" name="checkin_at" type="date" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="c-odo-start">Odômetro de Saída (km)</label>
+                                <input id="c-odo-start" name="odometer_start" type="number" step="0.01" placeholder="Ex: 45000" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="c-notes">Observações</label>
+                                <textarea id="c-notes" name="notes" placeholder="Descreva o motivo do uso, destino, etc." rows="3"></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Registrar Check-in</button>
+                        </form>
+                    </div>
+
+                    <div class="list-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <h3 style="margin: 0;">Histórico de Uso</h3>
+                            {% if session.role == 'admin' %}
+                            <a href="/reports/export/checkins" class="btn btn-sm btn-primary" style="text-decoration: none; border-radius: 50px; font-size: 0.8rem; padding: 0.35rem 0.75rem;">📥 Exportar CSV</a>
+                            {% endif %}
+                        </div>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Veículo</th>
+                                        <th>Motorista</th>
+                                        <th>Datas</th>
+                                        <th>KM (Saída/Chegada)</th>
+                                        <th>Obs.</th>
+                                        <th>Status / Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in checkins %}
+                                    <tr>
+                                        <td>
+                                            <strong>{{ item.vehicle_name or 'ID ' ~ item.vehicle_id }}</strong>
+                                            {% if item.vehicle_plate %}<br><small class="text-subtle">{{ item.vehicle_plate }}</small>{% endif %}
+                                        </td>
+                                        <td>{{ item.driver_name or 'ID ' ~ item.driver_id }}</td>
+                                        <td>
+                                            <span>Entrada: {{ item.checkin_at }}</span>
+                                            {% if item.checkout_at %}
+                                                <br><small class="text-subtle">Saída: {{ item.checkout_at }}</small>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <span>Saída: {{ "{:,.0f}".format(item.odometer_start).replace(",", ".") if item.odometer_start else '-' }} km</span>
+                                            {% if item.odometer_end %}
+                                                <br><small class="text-subtle">Chegada: {{ "{:,.0f}".format(item.odometer_end).replace(",", ".") if item.odometer_end else '-' }} km</small>
+                                            {% endif %}
+                                        </td>
+                                        <td><span class="notes-preview" title="{{ item.notes }}">{{ item.notes or '-' }}</span></td>
+                                        <td>
+                                            {% if item.checkout_at %}
+                                                <span class="status-badge status-green">Finalizado</span>
+                                            {% else %}
+                                                <div class="checkout-action-container">
+                                                    <span class="status-badge status-orange" style="margin-bottom: 0.5rem; display: inline-block;">Em Uso</span>
+                                                    <form action="/checkins/{{ item.id }}/checkout" method="post" class="checkout-inline-form" style="flex-direction: column; gap: 0.35rem; width: 100%;">
+                                                        <input type="date" name="checkout_at" required aria-label="Data de Saída" style="width: 100%; font-size: 0.8rem; padding: 0.25rem;">
+                                                        <input type="number" step="0.01" name="odometer_end" placeholder="KM Chegada" required style="width: 100%; font-size: 0.8rem; padding: 0.25rem;">
+                                                        <button type="submit" class="btn btn-sm btn-success" style="width: 100%; padding: 0.25rem;">Checkout</button>
+                                                    </form>
+                                                </div>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="6" class="no-data">Nenhum check-in registrado.</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: Maintenance -->
+            <div id="tab-maintenance" class="tab-content">
+                <div class="section-layout">
+                    <div class="form-card">
+                        <h3>Registrar Manutenção</h3>
+                        <form action="/maintenance" method="post">
+                            <div class="form-group">
+                                <label for="m-vehicle">Veículo</label>
+                                <select id="m-vehicle" name="vehicle_id" required>
+                                    <option value="" disabled selected>Selecione um veículo</option>
+                                    {% for vehicle in vehicles %}
+                                        <option value="{{ vehicle.id }}">{{ vehicle.name }} ({{ vehicle.plate }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="m-desc">Descrição do Serviço</label>
+                                <input id="m-desc" name="description" placeholder="Ex: Troca de pastilhas de freio" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="m-cost">Custo (R$)</label>
+                                <input id="m-cost" name="cost" type="number" step="0.01" placeholder="Ex: 350.00" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="m-odo">Odômetro na Manutenção (km)</label>
+                                <input id="m-odo" name="odometer" type="number" step="0.01" placeholder="Ex: 45000" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="m-date">Data da Manutenção</label>
+                                <input id="m-date" name="maint_date" type="date" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Registrar</button>
+                        </form>
+                    </div>
+
+                    <div class="list-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <h3 style="margin: 0;">Registro de Manutenções</h3>
+                            {% if session.role == 'admin' %}
+                            <a href="/reports/export/maintenance" class="btn btn-sm btn-primary" style="text-decoration: none; border-radius: 50px; font-size: 0.8rem; padding: 0.35rem 0.75rem;">📥 Exportar CSV</a>
+                            {% endif %}
+                        </div>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Veículo</th>
+                                        <th>Descrição</th>
+                                        <th>Custo</th>
+                                        <th>Odômetro</th>
+                                        <th>Data</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in maintenance %}
+                                    <tr>
+                                        <td>#{{ item.id }}</td>
+                                        <td>
+                                            <strong>{{ item.vehicle_name or 'ID ' ~ item.vehicle_id }}</strong>
+                                            {% if item.vehicle_plate %}<br><small class="text-subtle">{{ item.vehicle_plate }}</small>{% endif %}
+                                        </td>
+                                        <td>{{ item.description }}</td>
+                                        <td class="text-danger">R$ {{ "%.2f"|format(item.cost) }}</td>
+                                        <td>{{ "{:,.0f}".format(item.odometer).replace(",", ".") if item.odometer else '-' }} km</td>
+                                        <td>{{ item.maint_date }}</td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="6" class="no-data">Nenhuma manutenção registrada.</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: Fuel -->
+            <div id="tab-fuel" class="tab-content">
+                <div class="section-layout">
+                    <div class="form-card">
+                        <h3>Registrar Abastecimento</h3>
+                        <form action="/fuel" method="post">
+                            <div class="form-group">
+                                <label for="f-vehicle">Veículo</label>
+                                <select id="f-vehicle" name="vehicle_id" required>
+                                    <option value="" disabled selected>Selecione um veículo</option>
+                                    {% for vehicle in vehicles %}
+                                        <option value="{{ vehicle.id }}">{{ vehicle.name }} ({{ vehicle.plate }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="f-liters">Litros</label>
+                                <input id="f-liters" name="liters" type="number" step="0.01" placeholder="Ex: 45.5" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="f-cost">Custo Total (R$)</label>
+                                <input id="f-cost" name="cost" type="number" step="0.01" placeholder="Ex: 250.00" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="f-date">Data</label>
+                                <input id="f-date" name="fuel_date" type="date" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="f-odo">Odômetro (km)</label>
+                                <input id="f-odo" name="odometer" type="number" step="0.01" placeholder="Ex: 120530" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Registrar</button>
+                        </form>
+                    </div>
+
+                    <div class="list-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <h3 style="margin: 0;">Histórico de Abastecimento</h3>
+                            {% if session.role == 'admin' %}
+                            <a href="/reports/export/fuel" class="btn btn-sm btn-primary" style="text-decoration: none; border-radius: 50px; font-size: 0.8rem; padding: 0.35rem 0.75rem;">📥 Exportar CSV</a>
+                            {% endif %}
+                        </div>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Veículo</th>
+                                        <th>Litros</th>
+                                        <th>Custo Total</th>
+                                        <th>Preço/L</th>
+                                        <th>Data</th>
+                                        <th>Odômetro</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in fuel %}
+                                    <tr>
+                                        <td>#{{ item.id }}</td>
+                                        <td>
+                                            <strong>{{ item.vehicle_name or 'ID ' ~ item.vehicle_id }}</strong>
+                                            {% if item.vehicle_plate %}<br><small class="text-subtle">{{ item.vehicle_plate }}</small>{% endif %}
+                                        </td>
+                                        <td>{{ "%.2f"|format(item.liters) }} L</td>
+                                        <td>R$ {{ "%.2f"|format(item.cost) }}</td>
+                                        <td class="text-subtle">
+                                            {% if item.liters > 0 %}
+                                                R$ {{ "%.2f"|format(item.cost / item.liters) }}
+                                            {% else %}
+                                                -
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ item.fuel_date }}</td>
+                                        <td>{{ "{:,.0f}".format(item.odometer).replace(",", ".") }} km</td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="7" class="no-data">Nenhum abastecimento registrado.</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: Fines -->
+            <div id="tab-fines" class="tab-content">
+                <div class="section-layout">
+                    <div class="form-card">
+                        <h3>Registrar Multa</h3>
+                        <form action="/fines" method="post">
+                            <div class="form-group">
+                                <label for="fi-driver">Motorista infrator</label>
+                                <select id="fi-driver" name="driver_id" required>
+                                    <option value="" disabled selected>Selecione um motorista</option>
+                                    {% for driver in drivers %}
+                                        <option value="{{ driver.id }}">{{ driver.name }} ({{ driver.cpf }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="fi-desc">Infração / Descrição</label>
+                                <input id="fi-desc" name="description" placeholder="Ex: Excesso de velocidade" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="fi-amount">Valor (R$)</label>
+                                <input id="fi-amount" name="amount" type="number" step="0.01" placeholder="Ex: 195.23" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="fi-date">Data da Infração</label>
+                                <input id="fi-date" name="fine_date" type="date" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="fi-status">Status</label>
+                                <select id="fi-status" name="status">
+                                    <option>Pendente</option>
+                                    <option>Pago</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Registrar</button>
+                        </form>
+                    </div>
+
+                    <div class="list-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <h3 style="margin: 0;">Multas Registradas</h3>
+                            {% if session.role == 'admin' %}
+                            <a href="/reports/export/fines" class="btn btn-sm btn-primary" style="text-decoration: none; border-radius: 50px; font-size: 0.8rem; padding: 0.35rem 0.75rem;">📥 Exportar CSV</a>
+                            {% endif %}
+                        </div>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Motorista</th>
+                                        <th>Descrição</th>
+                                        <th>Valor</th>
+                                        <th>Data</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in fines %}
+                                    <tr>
+                                        <td>#{{ item.id }}</td>
+                                        <td><strong>{{ item.driver_name or 'ID ' ~ item.driver_id }}</strong></td>
+                                        <td>{{ item.description }}</td>
+                                        <td class="text-danger">R$ {{ "%.2f"|format(item.amount) }}</td>
+                                        <td>{{ item.fine_date }}</td>
+                                        <td>
+                                            <span class="status-badge {% if item.status == 'Pago' %}status-green{% else %}status-red{% endif %}">
+                                                {{ item.status }}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="6" class="no-data">Nenhuma multa registrada.</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <br>
+                <div class="list-card" style="margin-top: 1.5rem;">
+                    <h3>Consulta Externa DETRAN (Portal Integrado)</h3>
+                    <p style="color: var(--text-secondary); margin-bottom: 1.5rem; font-size: 0.9rem;">
+                        ⚠️ <strong>Nota Técnica:</strong> Devido a exigências de segurança (CAPTCHA, Login Gov.br) e divisão por estado, a consulta direta a portais oficiais requer APIs pagas de integração. Abaixo está uma <strong>simulação funcional</strong> conectada ao nosso resolvedor.
+                    </p>
+                    <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+                        <div style="flex: 1; min-width: 280px; max-width: 400px; background-color: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--border-radius); padding: 1.25rem;">
+                            <h4 style="margin-bottom: 1rem; color: #818cf8;">Consultar por Placa ou CPF</h4>
+                            <div class="form-group">
+                                <label for="detran-type">Tipo de Consulta</label>
+                                <select id="detran-type" onchange="toggleDetranFields()">
+                                    <option value="plate">Veículo (Placa)</option>
+                                    <option value="cpf">Motorista (CPF)</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group" id="detran-plate-group">
+                                <label for="detran-plate">Placa do Veículo</label>
+                                <select id="detran-plate">
+                                    <option value="" disabled selected>Selecione um veículo</option>
+                                    {% for vehicle in vehicles %}
+                                        <option value="{{ vehicle.plate }}">{{ vehicle.name }} ({{ vehicle.plate }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <div class="form-group" id="detran-cpf-group" style="display: none;">
+                                <label for="detran-driver">Motorista (CPF)</label>
+                                <select id="detran-driver">
+                                    <option value="" disabled selected>Selecione um motorista</option>
+                                    {% for driver in drivers %}
+                                        <option value="{{ driver.cpf }}" data-id="{{ driver.id }}">{{ driver.name }} ({{ driver.cpf }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <button type="button" class="btn btn-primary" onclick="queryDetran()">Consultar no DETRAN</button>
+                        </div>
+
+                        <div style="flex: 1.5; min-width: 320px; background-color: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--border-radius); padding: 1.25rem; display: flex; flex-direction: column;">
+                            <h4 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">Resultados da Consulta</h4>
+                            <div id="detran-results-content" style="flex-grow: 1; display: flex; align-items: center; justify-content: center; min-height: 150px; color: var(--text-muted);">
+                                Selecione os parâmetros e clique em "Consultar" para obter dados externos.
+                            </div>
+                        </div>
+                    </div>
+            </div>
+
+            {% if session.role == 'admin' %}
+            <!-- TAB: Reports (Custos & Viabilidade) -->
+            <div id="tab-reports" class="tab-content">
+                <!-- Stats Grid -->
+                <div class="stats-grid" style="margin-bottom: 1.5rem;">
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Custo Médio Geral (km)</span>
+                            <span class="stat-icon vehicle-color">🛣️</span>
+                        </div>
+                        <div class="stat-value">R$ {{ "%.2f"|format(fleet_avg_cost_km) }}/km</div>
+                        <div class="stat-desc">Custo total de combustível + manutenção / KM</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Veículo Mais Oneroso</span>
+                            <span class="stat-icon fine-color">💸</span>
+                        </div>
+                        <div class="stat-value">
+                            {% if most_expensive_vehicle %}
+                                {{ most_expensive_vehicle.name }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </div>
+                        <div class="stat-desc">
+                            {% if most_expensive_vehicle %}
+                                Custo total: R$ {{ "%.2f"|format(most_expensive_vehicle.total_cost) }}
+                            {% else %}
+                                Nenhum custo registrado
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Veículo Mais Eficiente</span>
+                            <span class="stat-icon driver-color">🍃</span>
+                        </div>
+                        <div class="stat-value">
+                            {% if most_efficient_vehicle %}
+                                {{ most_efficient_vehicle.name }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </div>
+                        <div class="stat-desc">
+                            {% if most_efficient_vehicle %}
+                                Consumo médio: {{ "%.1f"|format(most_efficient_vehicle.kml) }} km/L
+                            {% else %}
+                                Dados insuficientes de abastecimento
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Custos Acumulados</span>
+                            <span class="stat-icon fine-color">💰</span>
+                        </div>
+                        <div class="stat-value">R$ {{ "%.2f"|format(stats.total_maintenance_cost + stats.total_fuel_cost + stats.total_fines_cost) }}</div>
+                        <div class="stat-desc">Combustível + Manutenção + Multas</div>
+                    </div>
+                </div>
+
+                <!-- Graphs widgets -->
+                <div class="dashboard-widgets" style="margin-bottom: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));">
+                    <div class="widget-card">
+                        <h3>Comparativo de Custos por Veículo</h3>
+                        <div style="position: relative; height: 220px; width: 100%;">
+                            <canvas id="vehicleCostsCompareChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="widget-card">
+                        <h3>Consumo Médio (km/L) por Veículo</h3>
+                        <div style="position: relative; height: 220px; width: 100%;">
+                            <canvas id="vehicleKmlChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Detailed comparison list -->
+                <div class="list-card" style="width: 100%;">
+                    <h3>Planilha Comparativa de Custos da Frota</h3>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Veículo</th>
+                                    <th>Placa</th>
+                                    <th>KM Rodados</th>
+                                    <th>Custo Manutenção</th>
+                                    <th>Custo Combustível</th>
+                                    <th>Custo Total</th>
+                                    <th>Custo / KM (R$/km)</th>
+                                    <th>Média Consumo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for vc in vehicle_costs %}
+                                <tr>
+                                    <td><strong>{{ vc.name }}</strong></td>
+                                    <td><code class="license-badge">{{ vc.plate }}</code></td>
+                                    <td>{{ "{:,.0f}".format(vc.km).replace(",", ".") }} km</td>
+                                    <td class="text-danger">R$ {{ "%.2f"|format(vc.maint_cost) }}</td>
+                                    <td class="text-danger">R$ {{ "%.2f"|format(vc.fuel_cost) }}</td>
+                                    <td style="font-weight: 600;">R$ {{ "%.2f"|format(vc.total_cost) }}</td>
+                                    <td>
+                                        {% if vc.km > 0 %}
+                                            R$ {{ "%.2f"|format(vc.cost_per_km) }}/km
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if vc.kml > 0 %}
+                                            {{ "%.1f"|format(vc.kml) }} km/L
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="8" class="no-data">Nenhum dado comparativo disponível ainda. Insira KMs nos check-ins/abastecimentos e registre custos.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if session.role == 'admin' %}
+            <!-- TAB: Users Admin -->
+            <div id="tab-users-admin" class="tab-content">
+                <div class="section-layout" style="display: flex; flex-direction: column; gap: 1.5rem;">
+                    
+                    <!-- Pending Requests list -->
+                    <div class="list-card" style="width: 100%;">
+                        <h3>Solicitações de Cadastro Pendentes</h3>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Nome de Usuário</th>
+                                        <th>Cargo Solicitado</th>
+                                        <th>Status</th>
+                                        <th>Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% set pending_count = namespace(value=0) %}
+                                    {% for u in users_list %}
+                                        {% if u.status == 'Pendente' %}
+                                            {% set pending_count.value = pending_count.value + 1 %}
+                                            <tr>
+                                                <td><strong>{{ u.username }}</strong></td>
+                                                <td><span class="status-badge {% if u.role == 'admin' %}status-green{% else %}status-red{% endif %}">{{ u.role|capitalize }}</span></td>
+                                                <td><span class="status-badge status-red">Pendente</span></td>
+                                                <td>
+                                                    <div style="display: flex; gap: 0.5rem;">
+                                                        <form action="/admin/users/{{ u.id }}/approve" method="post" style="display:inline;">
+                                                            <button type="submit" class="btn btn-sm btn-success">Aprovar</button>
+                                                        </form>
+                                                        <form action="/admin/users/{{ u.id }}/delete" method="post" onsubmit="return confirm('Tem certeza que deseja recusar este cadastro?');" style="display:inline;">
+                                                            <button type="submit" class="btn btn-sm btn-danger">Recusar</button>
+                                                        </form>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        {% endif %}
+                                    {% endfor %}
+                                    {% if pending_count.value == 0 %}
+                                        <tr>
+                                            <td colspan="4" class="no-data">Nenhuma solicitação pendente de aprovação.</td>
+                                        </tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Active Users list -->
+                    <div class="list-card" style="width: 100%;">
+                        <h3>Usuários Ativos</h3>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Nome de Usuário</th>
+                                        <th>Nível de Acesso (Cargo)</th>
+                                        <th>Status</th>
+                                        <th>Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for u in users_list %}
+                                        {% if u.status == 'Aprovado' %}
+                                            <tr>
+                                                <td>#{{ u.id }}</td>
+                                                <td><strong>{{ u.username }}</strong></td>
+                                                <td>
+                                                    <span class="status-badge {% if u.role == 'admin' %}status-green{% else %}status-red{% endif %}">
+                                                        {{ u.role|capitalize }}
+                                                    </span>
+                                                </td>
+                                                <td><span class="status-badge status-green">Ativo</span></td>
+                                                <td>
+                                                    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                                                        <!-- Alterar cargo form -->
+                                                        {% if u.id != session['user_id'] %}
+                                                            <form action="/admin/users/{{ u.id }}/toggle-role" method="post" style="display:inline;">
+                                                                <button type="submit" class="btn btn-sm btn-primary">Alternar Cargo</button>
+                                                            </form>
+                                                        {% endif %}
+                                                        
+                                                        <!-- Alterar senha button -->
+                                                        <button class="btn btn-sm btn-primary" onclick="changeUserPasswordPrompt({{ u.id }}, '{{ u.username }}')">Alterar Senha</button>
+                                                        
+                                                        <!-- Excluir form -->
+                                                        {% if u.id != session['user_id'] %}
+                                                            <form action="/admin/users/{{ u.id }}/delete" method="post" onsubmit="return confirm('Tem certeza que deseja excluir esta conta de usuário?');" style="display:inline;">
+                                                                <button type="submit" class="btn btn-sm btn-danger">Excluir</button>
+                                                            </form>
+                                                        {% endif %}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        {% endif %}
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </main>
+    </div>
+
+    <!-- Active Tab switching JS script -->
+    <script>
+        function switchTab(tabName) {
+            // Role check guard for admin tabs
+            const role = "{{ session.role }}";
+            const adminTabs = ['vehicles', 'drivers', 'maintenance', 'fuel', 'fines', 'reports', 'users-admin'];
+            if (role !== 'admin' && adminTabs.includes(tabName)) {
+                return;
+            }
+
+            // Hide all tab contents
+            const contents = document.querySelectorAll('.tab-content');
+            contents.forEach(content => content.classList.remove('active'));
+
+            // Remove active class from all nav items
+            const navItems = document.querySelectorAll('.nav-item');
+            navItems.forEach(item => item.classList.remove('active'));
+
+            // Show selected tab content
+            const targetContent = document.getElementById('tab-' + tabName);
+            if (targetContent) {
+                targetContent.classList.add('active');
+            }
+
+            // Set clicked nav item as active
+            // Find nav item by comparing text or icon prefix, or just find it by onclick attribute contents
+            navItems.forEach(item => {
+                const onclickVal = item.getAttribute('onclick');
+                if (onclickVal && onclickVal.includes(tabName)) {
+                    item.classList.add('active');
+                }
+            });
+
+            // Update page title
+            const titles = {
+                'dashboard': 'Painel Geral',
+                'vehicles': 'Gerenciamento de Veículos',
+                'drivers': 'Gerenciamento de Motoristas',
+                'checkins': 'Check-in e Check-out de Veículos',
+                'maintenance': 'Manutenção de Veículos',
+                'fuel': 'Abastecimento da Frota',
+                'fines': 'Controle de Multas',
+                'reports': 'Custos e Viabilidade',
+                'users-admin': 'Gerenciamento de Usuários'
+            };
+            document.getElementById('page-title').innerText = titles[tabName] || 'Gestão de Frota';
+
+            // Store active tab in localStorage
+            localStorage.setItem('activeFrotaTab', tabName);
+        }
+
+        // Restore active tab on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedTab = localStorage.getItem('activeFrotaTab');
+            if (savedTab && ['dashboard', 'vehicles', 'drivers', 'checkins', 'maintenance', 'fuel', 'fines', 'reports', 'users-admin'].includes(savedTab)) {
+                switchTab(savedTab);
+            }
+        });
+
+        function toggleDetranFields() {
+            const type = document.getElementById('detran-type').value;
+            const plateGroup = document.getElementById('detran-plate-group');
+            const cpfGroup = document.getElementById('detran-cpf-group');
+            
+            if (type === 'plate') {
+                plateGroup.style.display = 'block';
+                cpfGroup.style.display = 'none';
+            } else {
+                plateGroup.style.display = 'none';
+                cpfGroup.style.display = 'block';
+            }
+        }
+
+        async function queryDetran() {
+            const type = document.getElementById('detran-type').value;
+            const resultsContent = document.getElementById('detran-results-content');
+            
+            let payload = {};
+            let displayTarget = "";
+            let driverId = null;
+
+            if (type === 'plate') {
+                const selectElement = document.getElementById('detran-plate');
+                const plate = selectElement.value;
+                if (!plate) {
+                    alert("Selecione um veículo com placa para consultar.");
+                    return;
+                }
+                payload = { plate: plate };
+                displayTarget = `Placa ${plate}`;
+                
+                // For importing, let's find the first driver from the select
+                const driverSelect = document.getElementById('detran-driver');
+                if (driverSelect && driverSelect.options.length > 1) {
+                    driverId = driverSelect.options[1].getAttribute('data-id');
+                }
+            } else {
+                const selectElement = document.getElementById('detran-driver');
+                const selectedOption = selectElement.options[selectElement.selectedIndex];
+                const cpf = selectElement.value;
+                if (!cpf || selectElement.selectedIndex === 0) {
+                    alert("Selecione um motorista para consultar.");
+                    return;
+                }
+                payload = { cpf: cpf };
+                displayTarget = `CPF ${cpf}`;
+                driverId = selectedOption.getAttribute('data-id');
+            }
+
+            // Show loading spinner
+            resultsContent.innerHTML = `
+                <div style="text-align: center; width: 100%;">
+                    <div style="border: 4px solid var(--border-color); border-top: 4px solid var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
+                    <p style="color: var(--text-secondary);">Consultando base do DETRAN para ${displayTarget}...</p>
+                </div>
+            `;
+
+            try {
+                const response = await fetch('/api/detran/consult', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
+                    body: JSON.stringify(payload)
+                });
+                
+                const result = await response.json();
+                if (!response.ok) {
+                    throw new Error(result.error || "Erro na consulta");
+                }
+
+                if (result.found && result.fines.length > 0) {
+                    let finesHtml = `
+                        <div style="width: 100%;">
+                            <p style="color: var(--success); font-weight: 600; margin-bottom: 1rem;">
+                                ✔️ Consulta concluída com sucesso via ${result.source}! Multas pendentes encontradas:
+                            </p>
+                            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    `;
+
+                    result.fines.forEach((fine, index) => {
+                        finesHtml += `
+                            <div style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem; display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <strong style="display: block; color: var(--text-primary); text-align: left;">${fine.description}</strong>
+                                    <span style="font-size: 0.8rem; color: var(--text-secondary); display: block; text-align: left;">Data: ${fine.date} | Pontos: ${fine.points}</span>
+                                </div>
+                                <div style="text-align: right; display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-end;">
+                                    <span style="font-weight: 700; color: #f87171;">R$ ${fine.amount.toFixed(2)}</span>
+                                    ${driverId ? `
+                                        <button type="button" class="btn btn-sm btn-success" id="import-btn-${index}" 
+                                            onclick='importFine(${driverId}, "${fine.description}", ${fine.amount}, "${fine.date}", "import-btn-${index}")'>
+                                            Importar
+                                        </button>
+                                    ` : '<span style="font-size: 0.75rem; color: var(--text-muted);">Cadastre motorista para importar</span>'}
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    finesHtml += `</div></div>`;
+                    resultsContent.innerHTML = finesHtml;
+                } else {
+                    resultsContent.innerHTML = `
+                        <div style="text-align: center; color: var(--success); width: 100%;">
+                            <span style="font-size: 2.5rem; display: block; margin-bottom: 0.5rem;">✔️</span>
+                            <p><strong>Nenhuma infração encontrada!</strong></p>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem;">A base do ${result.source} não retornou multas para este registro.</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultsContent.innerHTML = `
+                    <div style="text-align: center; color: var(--danger); width: 100%;">
+                        <span style="font-size: 2.5rem; display: block; margin-bottom: 0.5rem;">⚠️</span>
+                        <p><strong>Erro ao consultar o DETRAN</strong></p>
+                        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem;">${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function importFine(driverId, description, amount, date, btnId) {
+            const btn = document.getElementById(btnId);
+            btn.disabled = true;
+            btn.innerText = "Salvando...";
+
+            try {
+                const response = await fetch('/api/fines/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
+                    body: JSON.stringify({
+                        driver_id: driverId,
+                        description: description,
+                        amount: amount,
+                        fine_date: date
+                    })
+                });
+
+                if (response.ok) {
+                    btn.classList.remove('btn-success');
+                    btn.classList.add('btn-primary');
+                    btn.style.backgroundColor = 'var(--text-muted)';
+                    btn.innerText = "Importada";
+                    btn.onclick = null;
+                    
+                    // Reload after 1.2 seconds to show the imported record in local DB
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1200);
+                } else {
+                    throw new Error("Erro ao salvar multa");
+                }
+            } catch (error) {
+                alert(error.message);
+                btn.disabled = false;
+                btn.innerText = "Importar";
+            }
+        }
+
+        // Render Chart.js graphs if canvas elements exist
+        document.addEventListener('DOMContentLoaded', () => {
+            const ctxCosts = document.getElementById('costsChart');
+            const ctxStatus = document.getElementById('statusChart');
+
+            // Dynamic colors based on theme variables
+            const style = getComputedStyle(document.documentElement);
+            const cardBg = style.getPropertyValue('--bg-card').trim() || '#1f2937';
+            const textPrimary = style.getPropertyValue('--text-primary').trim() || '#f3f4f6';
+
+            if (ctxCosts) {
+                new Chart(ctxCosts, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Manutenções', 'Combustível', 'Multas'],
+                        datasets: [{
+                            data: [
+                                {{ stats.total_maintenance_cost }},
+                                {{ stats.total_fuel_cost }},
+                                {{ stats.total_fines_cost }}
+                            ],
+                            backgroundColor: ['#ef4444', '#06b6d4', '#f59e0b'],
+                            borderColor: cardBg,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'right',
+                                labels: {
+                                    color: textPrimary,
+                                    font: { family: 'Inter', size: 11 }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            if (ctxStatus) {
+                new Chart(ctxStatus, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Disponível', 'Em uso', 'Manutenção'],
+                        datasets: [{
+                            data: [
+                                {{ stats.status_available }},
+                                {{ stats.status_in_use }},
+                                {{ stats.status_maint }}
+                            ],
+                            backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
+                            borderColor: cardBg,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'right',
+                                labels: {
+                                    color: textPrimary,
+                                    font: { family: 'Inter', size: 11 }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Prepare comparative data for reports charts
+            const vcLabels = [];
+            const vcFuelCosts = [];
+            const vcMaintCosts = [];
+            const vcKml = [];
+            
+            {% for vc in vehicle_costs %}
+                vcLabels.push({{ (vc.name ~ " (" ~ vc.plate ~ ")")|tojson }});
+                vcFuelCosts.push({{ vc.fuel_cost|tojson }});
+                vcMaintCosts.push({{ vc.maint_cost|tojson }});
+                vcKml.push({{ vc.kml|tojson }});
+            {% endfor %}
+
+            const ctxCompare = document.getElementById('vehicleCostsCompareChart');
+            if (ctxCompare) {
+                new Chart(ctxCompare, {
+                    type: 'bar',
+                    data: {
+                        labels: vcLabels,
+                        datasets: [
+                            {
+                                label: 'Combustível (R$)',
+                                data: vcFuelCosts,
+                                backgroundColor: '#06b6d4',
+                                borderColor: cardBg,
+                                borderWidth: 1
+                            },
+                            {
+                                label: 'Manutenção (R$)',
+                                data: vcMaintCosts,
+                                backgroundColor: '#ef4444',
+                                borderColor: cardBg,
+                                borderWidth: 1
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                labels: { color: textPrimary, font: { family: 'Inter', size: 10 } }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: { color: 'rgba(255,255,255,0.05)' },
+                                ticks: { color: textPrimary, font: { family: 'Inter', size: 10 } }
+                            },
+                            y: {
+                                grid: { color: 'rgba(255,255,255,0.05)' },
+                                ticks: { color: textPrimary, font: { family: 'Inter', size: 10 } }
+                            }
+                        }
+                    }
+                });
+            }
+
+            const ctxKml = document.getElementById('vehicleKmlChart');
+            if (ctxKml) {
+                new Chart(ctxKml, {
+                    type: 'bar',
+                    data: {
+                        labels: vcLabels,
+                        datasets: [{
+                            label: 'Consumo Médio (km/L)',
+                            data: vcKml,
+                            backgroundColor: '#10b981',
+                            borderColor: cardBg,
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                labels: { color: textPrimary, font: { family: 'Inter', size: 10 } }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: { color: 'rgba(255,255,255,0.05)' },
+                                ticks: { color: textPrimary, font: { family: 'Inter', size: 10 } }
+                            },
+                            y: {
+                                grid: { color: 'rgba(255,255,255,0.05)' },
+                                ticks: { color: textPrimary, font: { family: 'Inter', size: 10 } }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Theme toggle logic
+            const themeToggleBtn = document.getElementById('theme-toggle');
+            if (themeToggleBtn) {
+                themeToggleBtn.addEventListener('click', () => {
+                    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+                    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                    document.documentElement.setAttribute('data-theme', newTheme);
+                    localStorage.setItem('theme', newTheme);
+                    // Reload page to redraw charts and cleanly apply theme-related transitions
+                    window.location.reload();
+                });
+            }
+        });
+
+        function changeUserPasswordPrompt(userId, username) {
+            const newPassword = prompt("Digite a nova senha para o usuário '" + username + "':");
+            if (newPassword !== null) {
+                const trimmed = newPassword.trim();
+                if (trimmed === "") {
+                    alert("A senha não pode estar em branco!");
+                    return;
+                }
+                
+                // Create a dynamic form to submit the request
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '/admin/users/' + userId + '/change-password';
+                
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'new_password';
+                input.value = trimmed;
+                const csrfInput = document.createElement('input');
+                csrfInput.type = 'hidden'; csrfInput.name = 'csrf_token'; csrfInput.value = CSRF_TOKEN;
+                form.appendChild(input);
+                form.appendChild(csrfInput);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+    </script>
+</body>
+</html>
