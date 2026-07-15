@@ -12,7 +12,7 @@ from google.oauth2.service_account import Credentials
 TABLES: dict[str, list[str]] = {
     "vehicles": ["id", "name", "plate", "year", "status", "created_at"],
     "drivers": ["id", "name", "phone", "license", "license_expiry", "status", "created_at"],
-    "maintenance": ["id", "vehicle_id", "description", "cost", "maint_date", "odometer", "created_at"],
+    "maintenance": ["id", "vehicle_id", "description", "cost", "maint_date", "odometer", "maint_type", "created_at"],
     "fuel": ["id", "vehicle_id", "liters", "cost", "fuel_date", "odometer", "created_at"],
     "checkins": ["id", "vehicle_id", "driver_id", "checkin_at", "checkout_at", "odometer_start", "odometer_end", "notes", "created_at"],
     "fines": ["id", "driver_id", "description", "amount", "fine_date", "status", "created_at"],
@@ -65,6 +65,17 @@ class DriveRepository:
                 worksheet.update([[self._serialize(record.get(header, "")) for header in TABLES[table]]], f"A{index}")
                 return
         raise KeyError(f"Registro {record_id} não encontrado em {table}.")
+
+    def delete(self, table: str, record_id: str) -> None:
+        self._validate_table(table)
+        worksheet = self.sheet.worksheet(table)
+        records = worksheet.get_all_records()
+        for index, record in enumerate(records, start=2):
+            if str(record.get("id")) == str(record_id):
+                worksheet.delete_rows(index)
+                return
+        raise KeyError(f"Registro {record_id} não encontrado em {table}.")
+
 
     @staticmethod
     def _serialize(value: Any) -> str | int | float:
@@ -133,6 +144,18 @@ class LocalJsonRepository:
                 self._save(data)
                 return
         raise KeyError(f"Registro {record_id} não encontrado em {table}.")
+
+    def delete(self, table: str, record_id: str) -> None:
+        self._validate_table(table)
+        data = self._load()
+        records = data.get(table, [])
+        initial_len = len(records)
+        records = [r for r in records if str(r.get("id")) != str(record_id)]
+        if len(records) == initial_len:
+            raise KeyError(f"Registro {record_id} não encontrado em {table}.")
+        data[table] = records
+        self._save(data)
+
 
     @staticmethod
     def _serialize(value: Any) -> str | int | float:
