@@ -77,6 +77,11 @@ DARK_THEME_CSS = """
         --secondary-background-color: #111827 !important;
         --text-color: #f3f4f6 !important;
 
+        --style-primary-color: #3b82f6 !important;
+        --style-background-color: #0b0f19 !important;
+        --style-secondary-background-color: #111827 !important;
+        --style-text-color: #f3f4f6 !important;
+
         --st-color-background: #0b0f19 !important;
         --st-color-text: #f3f4f6 !important;
         --st-color-secondary-background: #111827 !important;
@@ -107,7 +112,6 @@ DARK_THEME_CSS = """
         background-color: rgba(11, 15, 25, 0.8) !important;
         backdrop-filter: blur(8px);
     }
-    /* Precise text colors, preventing clashes in native notifications and custom cards */
     .stApp h1:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
     .stApp h2:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
     .stApp h3:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
@@ -121,23 +125,31 @@ DARK_THEME_CSS = """
     .stApp .stMarkdown:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *) {
         color: #f3f4f6 !important;
     }
-    /* Form fields, inputs, dropzones, calendars */
-    .stTextInput input, 
-    .stNumberInput input, 
-    .stDateInput input, 
-    .stTextArea textarea, 
-    .stSelectbox div[data-baseweb="select"], 
-    .stMultiSelect div[data-baseweb="select"],
+    /* Form fields, inputs, dropzones, selectbox containers background and border */
+    .stTextInput, 
+    .stNumberInput, 
+    .stDateInput, 
+    .stTextArea, 
+    .stSelectbox, 
+    .stMultiSelect,
     div[data-baseweb="input"], 
     div[data-baseweb="select"],
     section[data-testid="stFileUploadDropzone"] {
         background-color: #111827 !important;
-        color: #f3f4f6 !important;
         border: 1px solid rgba(255, 255, 255, 0.1) !important;
         border-radius: 8px;
     }
-    div[data-baseweb="input"] input, div[data-baseweb="input"] textarea {
+    /* Target nested text nodes in form fields to prevent dark text on dark background */
+    .stTextInput input, 
+    .stNumberInput input, 
+    .stDateInput input, 
+    .stTextArea textarea, 
+    div[data-baseweb="input"] input,
+    div[data-baseweb="input"] textarea,
+    div[data-baseweb="select"] div,
+    div[data-baseweb="select"] span {
         color: #f3f4f6 !important;
+        -webkit-text-fill-color: #f3f4f6 !important;
         background-color: transparent !important;
     }
     div[data-baseweb="input"] input::placeholder, 
@@ -148,9 +160,13 @@ DARK_THEME_CSS = """
         background-color: transparent !important;
         color: #f3f4f6 !important;
     }
-    div[data-baseweb="select"] span,
-    div[data-baseweb="select"] div {
+    /* Number input buttons */
+    div[data-baseweb="input"] button {
+        background-color: #1f2937 !important;
         color: #f3f4f6 !important;
+    }
+    div[data-baseweb="input"] button:hover {
+        background-color: #374151 !important;
     }
     /* Calendar popover styling */
     div[data-baseweb="calendar"] {
@@ -180,11 +196,20 @@ DARK_THEME_CSS = """
         background-color: #111827 !important;
         color: #f3f4f6 !important;
     }
+    div[data-baseweb="popover"] li *,
+    div[data-baseweb="popover"] [role="option"] * {
+        background-color: transparent !important;
+        color: #f3f4f6 !important;
+    }
     div[data-baseweb="popover"] li:hover,
     div[data-baseweb="popover"] [role="option"]:hover,
     div[data-baseweb="popover"] li[aria-selected="true"],
     div[data-baseweb="popover"] [role="option"][aria-selected="true"] {
         background-color: #1f2937 !important;
+        color: #3b82f6 !important;
+    }
+    div[data-baseweb="popover"] li:hover *,
+    div[data-baseweb="popover"] [role="option"]:hover * {
         color: #3b82f6 !important;
     }
     /* HTML Tables */
@@ -244,10 +269,15 @@ LIGHT_THEME_CSS = """
         --secondary-background-color: #f1f5f9 !important;
         --text-color: #0f172a !important;
 
-        --st-color-background: #f8fafc !important;
-        --st-color-text: #0f172a !important;
-        --st-color-secondary-background: #f1f5f9 !important;
+        --style-primary-color: #2563eb !important;
+        --style-background-color: #f8fafc !important;
+        --style-secondary-background-color: #f1f5f9 !important;
+        --style-text-color: #0f172a !important;
+
         --st-color-primary: #2563eb !important;
+        --st-color-background: #f8fafc !important;
+        --st-color-secondary-background: #f1f5f9 !important;
+        --st-color-text: #0f172a !important;
     }
     .stApp {
         background-color: #f8fafc !important;
@@ -287,22 +317,31 @@ LIGHT_THEME_CSS = """
     .stApp .stMarkdown:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *) {
         color: #0f172a !important;
     }
-    .stTextInput input, 
-    .stNumberInput input, 
-    .stDateInput input, 
-    .stTextArea textarea, 
-    .stSelectbox div[data-baseweb="select"], 
-    .stMultiSelect div[data-baseweb="select"],
+    /* Form fields, inputs, dropzones, selectbox containers background and border */
+    .stTextInput, 
+    .stNumberInput, 
+    .stDateInput, 
+    .stTextArea, 
+    .stSelectbox, 
+    .stMultiSelect,
     div[data-baseweb="input"], 
     div[data-baseweb="select"],
     section[data-testid="stFileUploadDropzone"] {
         background-color: #ffffff !important;
-        color: #0f172a !important;
         border: 1px solid rgba(15, 23, 42, 0.1) !important;
         border-radius: 8px;
     }
-    div[data-baseweb="input"] input, div[data-baseweb="input"] textarea {
+    /* Target nested text nodes in form fields */
+    .stTextInput input, 
+    .stNumberInput input, 
+    .stDateInput input, 
+    .stTextArea textarea, 
+    div[data-baseweb="input"] input,
+    div[data-baseweb="input"] textarea,
+    div[data-baseweb="select"] div,
+    div[data-baseweb="select"] span {
         color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
         background-color: transparent !important;
     }
     div[data-baseweb="input"] input::placeholder, 
@@ -313,9 +352,13 @@ LIGHT_THEME_CSS = """
         background-color: transparent !important;
         color: #0f172a !important;
     }
-    div[data-baseweb="select"] span,
-    div[data-baseweb="select"] div {
+    /* Number input buttons */
+    div[data-baseweb="input"] button {
+        background-color: #f1f5f9 !important;
         color: #0f172a !important;
+    }
+    div[data-baseweb="input"] button:hover {
+        background-color: #e2e8f0 !important;
     }
     /* Calendar popover styling */
     div[data-baseweb="calendar"] {
@@ -345,11 +388,20 @@ LIGHT_THEME_CSS = """
         background-color: #ffffff !important;
         color: #0f172a !important;
     }
+    div[data-baseweb="popover"] li *,
+    div[data-baseweb="popover"] [role="option"] * {
+        background-color: transparent !important;
+        color: #0f172a !important;
+    }
     div[data-baseweb="popover"] li:hover,
     div[data-baseweb="popover"] [role="option"]:hover,
     div[data-baseweb="popover"] li[aria-selected="true"],
     div[data-baseweb="popover"] [role="option"][aria-selected="true"] {
         background-color: #f1f5f9 !important;
+        color: #2563eb !important;
+    }
+    div[data-baseweb="popover"] li:hover *,
+    div[data-baseweb="popover"] [role="option"]:hover * {
         color: #2563eb !important;
     }
     /* HTML Tables */
