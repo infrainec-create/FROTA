@@ -70,13 +70,17 @@ if st.session_state["authenticated"]:
     st.session_state["last_activity"] = time.time()
 
 # Constants for Custom Theme CSS Overrides
-# Constants for Custom Theme CSS Overrides
 DARK_THEME_CSS = """
     :root {
-        --primary-color: #3b82f6;
-        --background-color: #0b0f19;
-        --secondary-background-color: #111827;
-        --text-color: #f3f4f6;
+        --primary-color: #3b82f6 !important;
+        --background-color: #0b0f19 !important;
+        --secondary-background-color: #111827 !important;
+        --text-color: #f3f4f6 !important;
+
+        --st-color-background: #0b0f19 !important;
+        --st-color-text: #f3f4f6 !important;
+        --st-color-secondary-background: #111827 !important;
+        --st-color-primary: #3b82f6 !important;
     }
     .stApp {
         background-color: #0b0f19 !important;
@@ -117,8 +121,18 @@ DARK_THEME_CSS = """
     .stApp .stMarkdown:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *) {
         color: #f3f4f6 !important;
     }
-    div[data-baseweb="input"] {
+    /* Form fields, inputs, dropzones, calendars */
+    .stTextInput input, 
+    .stNumberInput input, 
+    .stDateInput input, 
+    .stTextArea textarea, 
+    .stSelectbox div[data-baseweb="select"], 
+    .stMultiSelect div[data-baseweb="select"],
+    div[data-baseweb="input"], 
+    div[data-baseweb="select"],
+    section[data-testid="stFileUploadDropzone"] {
         background-color: #111827 !important;
+        color: #f3f4f6 !important;
         border: 1px solid rgba(255, 255, 255, 0.1) !important;
         border-radius: 8px;
     }
@@ -130,11 +144,6 @@ DARK_THEME_CSS = """
     div[data-baseweb="input"] textarea::placeholder {
         color: #6b7280 !important;
     }
-    div[data-baseweb="select"] {
-        background-color: #111827 !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        border-radius: 8px;
-    }
     div[data-baseweb="select"] > div {
         background-color: transparent !important;
         color: #f3f4f6 !important;
@@ -143,6 +152,23 @@ DARK_THEME_CSS = """
     div[data-baseweb="select"] div {
         color: #f3f4f6 !important;
     }
+    /* Calendar popover styling */
+    div[data-baseweb="calendar"] {
+        background-color: #111827 !important;
+        color: #f3f4f6 !important;
+    }
+    div[data-baseweb="calendar"] * {
+        background-color: #111827 !important;
+        color: #f3f4f6 !important;
+    }
+    div[data-baseweb="calendar"] [aria-selected="true"] {
+        background-color: #3b82f6 !important;
+        color: #ffffff !important;
+    }
+    div[data-baseweb="calendar"] *:hover {
+        background-color: #1f2937 !important;
+    }
+    /* Dropdown Popovers */
     div[data-baseweb="popover"] {
         background-color: #111827 !important;
         color: #f3f4f6 !important;
@@ -161,6 +187,20 @@ DARK_THEME_CSS = """
         background-color: #1f2937 !important;
         color: #3b82f6 !important;
     }
+    /* HTML Tables */
+    table {
+        background-color: #111827 !important;
+        color: #f3f4f6 !important;
+    }
+    th, td {
+        background-color: #111827 !important;
+        color: #f3f4f6 !important;
+        border-color: rgba(255, 255, 255, 0.1) !important;
+    }
+    tr:hover td {
+        background-color: #1f2937 !important;
+    }
+    /* Buttons */
     button[data-testid="baseButton-secondary"] {
         background-color: #111827 !important;
         color: #f3f4f6 !important;
@@ -199,10 +239,15 @@ DARK_THEME_CSS = """
 
 LIGHT_THEME_CSS = """
     :root {
-        --primary-color: #2563eb;
-        --background-color: #f8fafc;
-        --secondary-background-color: #f1f5f9;
-        --text-color: #0f172a;
+        --primary-color: #2563eb !important;
+        --background-color: #f8fafc !important;
+        --secondary-background-color: #f1f5f9 !important;
+        --text-color: #0f172a !important;
+
+        --st-color-background: #f8fafc !important;
+        --st-color-text: #0f172a !important;
+        --st-color-secondary-background: #f1f5f9 !important;
+        --st-color-primary: #2563eb !important;
     }
     .stApp {
         background-color: #f8fafc !important;
@@ -242,8 +287,17 @@ LIGHT_THEME_CSS = """
     .stApp .stMarkdown:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *) {
         color: #0f172a !important;
     }
-    div[data-baseweb="input"] {
+    .stTextInput input, 
+    .stNumberInput input, 
+    .stDateInput input, 
+    .stTextArea textarea, 
+    .stSelectbox div[data-baseweb="select"], 
+    .stMultiSelect div[data-baseweb="select"],
+    div[data-baseweb="input"], 
+    div[data-baseweb="select"],
+    section[data-testid="stFileUploadDropzone"] {
         background-color: #ffffff !important;
+        color: #0f172a !important;
         border: 1px solid rgba(15, 23, 42, 0.1) !important;
         border-radius: 8px;
     }
@@ -255,11 +309,6 @@ LIGHT_THEME_CSS = """
     div[data-baseweb="input"] textarea::placeholder {
         color: #9ca3af !important;
     }
-    div[data-baseweb="select"] {
-        background-color: #ffffff !important;
-        border: 1px solid rgba(15, 23, 42, 0.1) !important;
-        border-radius: 8px;
-    }
     div[data-baseweb="select"] > div {
         background-color: transparent !important;
         color: #0f172a !important;
@@ -268,6 +317,23 @@ LIGHT_THEME_CSS = """
     div[data-baseweb="select"] div {
         color: #0f172a !important;
     }
+    /* Calendar popover styling */
+    div[data-baseweb="calendar"] {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+    }
+    div[data-baseweb="calendar"] * {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+    }
+    div[data-baseweb="calendar"] [aria-selected="true"] {
+        background-color: #2563eb !important;
+        color: #ffffff !important;
+    }
+    div[data-baseweb="calendar"] *:hover {
+        background-color: #f1f5f9 !important;
+    }
+    /* Dropdown Popovers */
     div[data-baseweb="popover"] {
         background-color: #ffffff !important;
         color: #0f172a !important;
@@ -286,6 +352,20 @@ LIGHT_THEME_CSS = """
         background-color: #f1f5f9 !important;
         color: #2563eb !important;
     }
+    /* HTML Tables */
+    table {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+    }
+    th, td {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        border-color: rgba(15, 23, 42, 0.1) !important;
+    }
+    tr:hover td {
+        background-color: #f1f5f9 !important;
+    }
+    /* Buttons */
     button[data-testid="baseButton-secondary"] {
         background-color: #ffffff !important;
         color: #0f172a !important;
