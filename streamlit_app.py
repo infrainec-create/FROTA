@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timezone, timedelta
 from typing import Any
 
 import pandas as pd
@@ -17,9 +17,24 @@ def secret(name: str, default: Any = None) -> Any:
     return st.secrets[name] if name in st.secrets else default
 
 
-# 🚪 Simple Authentication Gate
+@st.cache_resource
+def get_repository() -> DriveRepository:
+    account = secret("gcp_service_account")
+    folder_id = secret("google_drive_folder_id") or secret("google_sheet_id")
+    return DriveRepository(
+        dict(account) if account else None,
+        str(folder_id) if folder_id else None
+    )
+
+
+repo = get_repository()
+
+
+# 🚪 Advanced Authentication Gate
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
+if "username" not in st.session_state:
+    st.session_state["username"] = ""
 
 if not st.session_state["authenticated"]:
     st.markdown("""
@@ -29,8 +44,8 @@ if not st.session_state["authenticated"]:
         font-family: 'Plus Jakarta Sans', sans-serif;
     }
     .login-box {
-        max-width: 420px;
-        margin: 120px auto;
+        max-width: 480px;
+        margin: 60px auto 20px auto;
         padding: 2.5rem;
         background: rgba(128, 128, 128, 0.05);
         border: 1px solid rgba(128, 128, 128, 0.15);
@@ -46,7 +61,7 @@ if not st.session_state["authenticated"]:
     .login-subtitle {
         font-size: 0.85rem;
         color: #888888;
-        margin-bottom: 2rem;
+        margin-bottom: 1.5rem;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -57,26 +72,148 @@ if not st.session_state["authenticated"]:
         <div class="login-subtitle">Sistema Gerencial de Frotas</div>
     </div>
     """, unsafe_allow_html=True)
-    
-    with st.container():
-        col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
-        with col_l2:
-            password = st.text_input("Senha de Acesso", type="password", key="login_pass")
-            if st.button("Entrar no Painel", type="primary", use_container_width=True):
-                correct_pass = secret("ACCESS_PASSWORD", "admin123")
-                if password == correct_pass:
-                    st.session_state["authenticated"] = True
-                    st.rerun()
+
+    try:
+        users_list = repo.list("users")
+    except Exception:
+        users_list = []
+
+    # Se não houver nenhum usuário, força a criação do primeiro administrador
+    if not users_list:
+        st.info("👋 Bem-vindo ao FrotaControl! Crie a primeira conta de administrador do sistema para começar.")
+        with st.form("first_admin_form"):
+            new_name = st.text_input("Nome Completo")
+            new_user = st.text_input("Nome de Usuário (login)")
+            new_pass = st.text_input("Senha", type="password")
+            question = st.selectbox(
+                "Pergunta de Segurança (para recuperar a senha no futuro)",
+                [
+                    "Qual o nome da sua mãe?",
+                    "Qual o nome do seu primeiro animal de estimação?",
+                    "Em qual cidade você nasceu?",
+                    "Qual o modelo do seu primeiro carro?"
+                ]
+            )
+            answer = st.text_input("Resposta de Segurança").strip().lower()
+            
+            if st.form_submit_button("Criar Conta Administrador", type="primary"):
+                if not new_name.strip() or not new_user.strip() or not new_pass or not answer.strip():
+                    st.error("Por favor, preencha todos os campos obrigatórios.")
                 else:
-                    st.error("Senha de acesso incorreta. Tente novamente.")
+                    repo.add("users", {
+                        "username": new_user.strip(),
+                        "password": new_pass,
+                        "name": new_name.strip(),
+                        "security_question": question,
+                        "security_answer": answer
+                    })
+                    st.cache_data.clear()
+                    st.session_state["authenticated"] = True
+                    st.session_state["username"] = new_user.strip()
+                    st.success("Administrador criado com sucesso!")
+                    st.rerun()
+        st.stop()
+
+    col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
+    with col_l2:
+        auth_mode = st.tabs(["🔑 Entrar", "➕ Nova Conta", "🩹 Recuperar Acesso"])
+        
+        with auth_mode[0]:
+            with st.form("login_form"):
+                user = st.text_input("Usuário")
+                passwd = st.text_input("Senha", type="password")
+                if st.form_submit_button("Entrar", type="primary", use_container_width=True):
+                    matched = next((u for u in users_list if u["username"] == user.strip()), None)
+                    if matched and matched["password"] == passwd:
+                        st.session_state["authenticated"] = True
+                        st.session_state["username"] = matched["username"]
+                        st.rerun()
+                    else:
+                        st.error("Usuário ou senha incorretos.")
+                        
+        with auth_mode[1]:
+            st.caption("Cadastre novas contas de operadores ou administradores.")
+            with st.form("register_form"):
+                reg_code = st.text_input("Código de Convite (ACCESS_PASSWORD nos segredos)", type="password")
+                reg_name = st.text_input("Nome Completo")
+                reg_user = st.text_input("Nome de Usuário")
+                reg_pass = st.text_input("Senha", type="password")
+                reg_question = st.selectbox(
+                    "Pergunta de Segurança",
+                    [
+                        "Qual o nome da sua mãe?",
+                        "Qual o nome do seu primeiro animal de estimação?",
+                        "Em qual cidade você nasceu?",
+                        "Qual o modelo do seu primeiro carro?"
+                    ],
+                    key="reg_q"
+                )
+                reg_answer = st.text_input("Resposta de Segurança", key="reg_a").strip().lower()
+                
+                if st.form_submit_button("Criar Conta", type="primary", use_container_width=True):
+                    invite_code = secret("ACCESS_PASSWORD", "admin123")
+                    if reg_code != invite_code:
+                        st.error("Código de convite inválido.")
+                    elif not reg_name.strip() or not reg_user.strip() or not reg_pass or not reg_answer.strip():
+                        st.error("Preencha todos os campos obrigatórios.")
+                    elif any(u["username"] == reg_user.strip() for u in users_list):
+                        st.error("Este nome de usuário já está em uso.")
+                    else:
+                        repo.add("users", {
+                            "username": reg_user.strip(),
+                            "password": reg_pass,
+                            "name": reg_name.strip(),
+                            "security_question": reg_question,
+                            "security_answer": reg_answer
+                        })
+                        st.cache_data.clear()
+                        st.success("Conta criada com sucesso! Faça login na aba 'Entrar'.")
+                        
+        with auth_mode[2]:
+            st.caption("Redefina sua senha respondendo à sua pergunta de segurança.")
+            rec_user = st.text_input("Seu Nome de Usuário", key="rec_u")
+            
+            matched_rec = None
+            if rec_user:
+                matched_rec = next((u for u in users_list if u["username"] == rec_user.strip()), None)
+                if not matched_rec:
+                    st.error("Usuário não cadastrado.")
+            
+            if matched_rec:
+                st.info(f"Pergunta de Segurança: **{matched_rec.get('security_question')}**")
+                with st.form("recovery_form"):
+                    rec_answer = st.text_input("Sua Resposta", type="password")
+                    new_pass_val = st.text_input("Nova Senha", type="password")
+                    if st.form_submit_button("Redefinir Senha", type="primary", use_container_width=True):
+                        if rec_answer.strip().lower() == matched_rec.get("security_answer", "").strip().lower():
+                            repo.update("users", matched_rec["id"], {"password": new_pass_val})
+                            st.cache_data.clear()
+                            st.success("Senha redefinida com sucesso! Vá para a aba 'Entrar' para logar.")
+                        else:
+                            st.error("Resposta incorreta!")
     st.stop()
 
 
+# Performance caching: avoids calling Google sheets API on every single component interaction
+@st.cache_data(ttl=300)
+def rows(table: str) -> list[dict[str, Any]]:
+    return get_repository().list(table)
+
+
+# Query Data Tables
+users, vehicles, drivers, maintenance, fuel, checkins, fines = (rows(name) for name in ("users", "vehicles", "drivers", "maintenance", "fuel", "checkins", "fines"))
+
+
 # Sidebar Logout Button and Theme Selector
-st.sidebar.markdown("### 👤 Usuário Logado")
-st.sidebar.caption("Administrador")
+logged_username = st.session_state.get("username", "Administrador")
+matched_logged = next((u for u in users if u["username"] == logged_username), None)
+logged_name = matched_logged["name"] if matched_logged else logged_username
+
+st.sidebar.markdown(f"### 👤 Logado como:")
+st.sidebar.markdown(f"**{logged_name}**")
 if st.sidebar.button("🚪 Sair do Sistema", use_container_width=True):
     st.session_state["authenticated"] = False
+    st.session_state["username"] = ""
     st.rerun()
 
 st.sidebar.divider()
@@ -196,22 +333,6 @@ html, body, [class*="css"] {{
 """, unsafe_allow_html=True)
 
 
-@st.cache_resource
-def get_repository() -> DriveRepository:
-    account = secret("gcp_service_account")
-    folder_id = secret("google_drive_folder_id") or secret("google_sheet_id")
-    return DriveRepository(
-        dict(account) if account else None,
-        str(folder_id) if folder_id else None
-    )
-
-
-# Performance caching: avoids calling Google sheets API on every single component interaction
-@st.cache_data(ttl=300)
-def rows(table: str) -> list[dict[str, Any]]:
-    return get_repository().list(table)
-
-
 def as_number(value: Any) -> float:
     if value is None:
         return 0.0
@@ -245,9 +366,6 @@ def vehicle_odometer(vehicle_id: str, fuel: list[dict[str, Any]], maintenance: l
     return max(values, default=0.0)
 
 
-repo = get_repository()
-
-
 # 📁 Audit Logger Helper
 def log_action(action: str, details: str):
     try:
@@ -266,13 +384,10 @@ def safe_dataframe(data: list[dict[str, Any]], columns: list[str]) -> pd.DataFra
     return df[columns]
 
 
-
-vehicles, drivers, maintenance, fuel, checkins, fines = (rows(name) for name in ("vehicles", "drivers", "maintenance", "fuel", "checkins", "fines"))
-
-st.title("🚚 FrotaControl Pro")
+# Rest of streamlit app logic starts here...
 st.caption("Gestão avançada de frotas com persistência flexível (Google Sheets / JSON)")
 
-if not (secret("gcp_service_account") and secret("google_sheet_id")):
+if not (secret("gcp_service_account") and (secret("google_drive_folder_id") or secret("google_sheet_id"))):
     st.warning("⚠️ Executando com banco de dados local (`local_db.json`). Para salvar os dados no Google Drive, configure o arquivo `.streamlit/secrets.toml`.")
 
 tab_dashboard, tab_vehicles, tab_operations, tab_maintenance, tab_fines, tab_reports, tab_logs, tab_ai = st.tabs([
@@ -878,7 +993,7 @@ with tab_fines:
                         })
                         log_action("Edição de Multa", f"Multa ID {fine_data['id']} atualizada.")
                         st.cache_data.clear()
-                        st.success("Multa atualizada com sucesso!")
+                        st.success("Multa updated successfully!")
                         st.rerun()
                         
         with col_fe2:

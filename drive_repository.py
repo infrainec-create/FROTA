@@ -13,6 +13,7 @@ from google.auth.transport.requests import AuthorizedSession
 
 
 TABLES: dict[str, list[str]] = {
+    "users": ["id", "username", "password", "name", "security_question", "security_answer", "created_at"],
     "vehicles": ["id", "name", "plate", "year", "status", "ipva_expiry", "insurance_expiry", "created_at"],
     "drivers": ["id", "name", "phone", "license", "license_expiry", "status", "created_at"],
     "maintenance": ["id", "vehicle_id", "description", "cost", "maint_date", "odometer", "maint_type", "created_at"],
@@ -179,6 +180,15 @@ class DriveRepository:
         conn.commit()
         conn.close()
         
+        self._upload_to_drive()
+
+    def clear_all_data(self) -> None:
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        for table in TABLES.keys():
+            cursor.execute(f"DELETE FROM {table}")
+        conn.commit()
+        conn.close()
         self._upload_to_drive()
 
     @staticmethod
