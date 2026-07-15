@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone, timedelta
+import hashlib
+import time
 from typing import Any
 
 import pandas as pd
@@ -30,11 +32,41 @@ def get_repository() -> DriveRepository:
 repo = get_repository()
 
 
+# 🔒 Password Hashing Helper
+def hash_password(password: str) -> str:
+    salt = "frota_control_salt_2026_"
+    return hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
+
+
 # 🚪 Advanced Authentication Gate
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 if "username" not in st.session_state:
     st.session_state["username"] = ""
+if "login_attempts" not in st.session_state:
+    st.session_state["login_attempts"] = 0
+if "lockout_time" not in st.session_state:
+    st.session_state["lockout_time"] = 0.0
+
+# Brute-Force lockout check (60 seconds block after 5 failed attempts)
+if st.session_state["login_attempts"] >= 5:
+    elapsed_lock = time.time() - st.session_state["lockout_time"]
+    if elapsed_lock < 60:
+        st.error(f"⚠️ Conta temporariamente bloqueada devido a muitas tentativas incorretas. Tente novamente em {int(60 - elapsed_lock)} segundos.")
+        st.stop()
+    else:
+        st.session_state["login_attempts"] = 0
+
+# Session Timeout check (30 minutes = 1800 seconds)
+if st.session_state["authenticated"]:
+    if "last_activity" in st.session_state:
+        elapsed_act = time.time() - st.session_state["last_activity"]
+        if elapsed_act > 1800:
+            st.session_state["authenticated"] = False
+            st.session_state["username"] = ""
+            st.warning("⚠️ Sua sessão expirou por inatividade. Faça login novamente.")
+            st.rerun()
+    st.session_state["last_activity"] = time.time()
 
 if not st.session_state["authenticated"]:
     st.markdown("""
@@ -85,6 +117,7 @@ if not st.session_state["authenticated"]:
             new_name = st.text_input("Nome Completo")
             new_user = st.text_input("Nome de Usuário (login)")
             new_pass = st.text_input("Senha", type="password")
+            new_pass_confirm = st.text_input("Confirme a Senha", type="password")
             question = st.selectbox(
                 "Pergunta de Segurança (para recuperar a senha no futuro)",
                 [
@@ -99,10 +132,12 @@ if not st.session_state["authenticated"]:
             if st.form_submit_button("Criar Conta Administrador", type="primary"):
                 if not new_name.strip() or not new_user.strip() or not new_pass or not answer.strip():
                     st.error("Por favor, preencha todos os campos obrigatórios.")
+                elif new_pass != new_pass_confirm:
+                    st.error("As senhas informadas não coincidem.")
                 else:
                     repo.add("users", {
                         "username": new_user.strip(),
-                        "password": new_pass,
+                        "password": hash_password(new_pass),
                         "name": new_name.strip(),
                         "security_question": question,
                         "security_answer": answer
@@ -110,6 +145,7 @@ if not st.session_state["authenticated"]:
                     st.cache_data.clear()
                     st.session_state["authenticated"] = True
                     st.session_state["username"] = new_user.strip()
+                    st.session_state["login_attempts"] = 0
                     st.success("Administrador criado com sucesso!")
                     st.rerun()
         st.stop()
@@ -124,12 +160,19 @@ if not st.session_state["authenticated"]:
                 passwd = st.text_input("Senha", type="password")
                 if st.form_submit_button("Entrar", type="primary", use_container_width=True):
                     matched = next((u for u in users_list if u["username"] == user.strip()), None)
-                    if matched and matched["password"] == passwd:
+                    if matched and matched["password"] == hash_password(passwd):
                         st.session_state["authenticated"] = True
                         st.session_state["username"] = matched["username"]
+                        st.session_state["login_attempts"] = 0
                         st.rerun()
                     else:
-                        st.error("Usuário ou senha incorretos.")
+                        st.session_state["login_attempts"] += 1
+                        if st.session_state["login_attempts"] >= 5:
+                            st.session_state["lockout_time"] = time.time()
+                            st.error("⚠️ Muitas tentativas incorretas. Conta bloqueada por 60 segundos.")
+                            st.rerun()
+                        else:
+                            st.error(f"Usuário ou senha incorretos. Tentativa {st.session_state['login_attempts']}/5.")
                         
         with auth_mode[1]:
             st.caption("Cadastre novas contas de operadores ou administradores.")
@@ -138,6 +181,7 @@ if not st.session_state["authenticated"]:
                 reg_name = st.text_input("Nome Completo")
                 reg_user = st.text_input("Nome de Usuário")
                 reg_pass = st.text_input("Senha", type="password")
+                reg_pass_confirm = st.text_input("Confirme a Senha", type="password")
                 reg_question = st.selectbox(
                     "Pergunta de Segurança",
                     [
@@ -156,12 +200,14 @@ if not st.session_state["authenticated"]:
                         st.error("Código de convite inválido.")
                     elif not reg_name.strip() or not reg_user.strip() or not reg_pass or not reg_answer.strip():
                         st.error("Preencha todos os campos obrigatórios.")
+                    elif reg_pass != reg_pass_confirm:
+                        st.error("As senhas informadas não coincidem.")
                     elif any(u["username"] == reg_user.strip() for u in users_list):
                         st.error("Este nome de usuário já está em uso.")
                     else:
                         repo.add("users", {
                             "username": reg_user.strip(),
-                            "password": reg_pass,
+                            "password": hash_password(reg_pass),
                             "name": reg_name.strip(),
                             "security_question": reg_question,
                             "security_answer": reg_answer
@@ -184,13 +230,16 @@ if not st.session_state["authenticated"]:
                 with st.form("recovery_form"):
                     rec_answer = st.text_input("Sua Resposta", type="password")
                     new_pass_val = st.text_input("Nova Senha", type="password")
+                    new_pass_confirm_val = st.text_input("Confirme a Nova Senha", type="password")
                     if st.form_submit_button("Redefinir Senha", type="primary", use_container_width=True):
-                        if rec_answer.strip().lower() == matched_rec.get("security_answer", "").strip().lower():
-                            repo.update("users", matched_rec["id"], {"password": new_pass_val})
+                        if rec_answer.strip().lower() != matched_rec.get("security_answer", "").strip().lower():
+                            st.error("Resposta de segurança incorreta.")
+                        elif new_pass_val != new_pass_confirm_val:
+                            st.error("As senhas informadas não coincidem.")
+                        else:
+                            repo.update("users", matched_rec["id"], {"password": hash_password(new_pass_val)})
                             st.cache_data.clear()
                             st.success("Senha redefinida com sucesso! Vá para a aba 'Entrar' para logar.")
-                        else:
-                            st.error("Resposta incorreta!")
     st.stop()
 
 
