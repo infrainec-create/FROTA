@@ -70,6 +70,7 @@ if st.session_state["authenticated"]:
     st.session_state["last_activity"] = time.time()
 
 # Constants for Custom Theme CSS Overrides
+# Constants for Custom Theme CSS Overrides
 DARK_THEME_CSS = """
     :root {
         --primary-color: #3b82f6;
@@ -85,14 +86,35 @@ DARK_THEME_CSS = """
         background-color: #111827 !important;
         color: #f3f4f6 !important;
     }
-    section[data-testid="stSidebar"] *, section[data-testid="stSidebar"] span, section[data-testid="stSidebar"] p {
+    section[data-testid="stSidebar"] h1, 
+    section[data-testid="stSidebar"] h2, 
+    section[data-testid="stSidebar"] h3, 
+    section[data-testid="stSidebar"] h4, 
+    section[data-testid="stSidebar"] h5, 
+    section[data-testid="stSidebar"] h6, 
+    section[data-testid="stSidebar"] p, 
+    section[data-testid="stSidebar"] label, 
+    section[data-testid="stSidebar"] span:not([data-baseweb]),
+    section[data-testid="stSidebar"] small, 
+    section[data-testid="stSidebar"] .stMarkdown {
         color: #f3f4f6 !important;
     }
     header[data-testid="stHeader"] {
         background-color: rgba(11, 15, 25, 0.8) !important;
         backdrop-filter: blur(8px);
     }
-    h1, h2, h3, h4, h5, h6, p, label, span, small, .stMarkdown {
+    /* Precise text colors, preventing clashes in native notifications and custom cards */
+    .stApp h1:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp h2:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp h3:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp h4:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp h5:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp h6:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp p:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp label:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp span:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *):not([data-baseweb]),
+    .stApp small:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp .stMarkdown:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *) {
         color: #f3f4f6 !important;
     }
     div[data-baseweb="input"] {
@@ -104,6 +126,10 @@ DARK_THEME_CSS = """
         color: #f3f4f6 !important;
         background-color: transparent !important;
     }
+    div[data-baseweb="input"] input::placeholder, 
+    div[data-baseweb="input"] textarea::placeholder {
+        color: #6b7280 !important;
+    }
     div[data-baseweb="select"] {
         background-color: #111827 !important;
         border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -113,17 +139,27 @@ DARK_THEME_CSS = """
         background-color: transparent !important;
         color: #f3f4f6 !important;
     }
+    div[data-baseweb="select"] span,
+    div[data-baseweb="select"] div {
+        color: #f3f4f6 !important;
+    }
     div[data-baseweb="popover"] {
         background-color: #111827 !important;
         color: #f3f4f6 !important;
         border: 1px solid rgba(255, 255, 255, 0.1) !important;
     }
-    div[data-baseweb="popover"] * {
+    div[data-baseweb="popover"] ul,
+    div[data-baseweb="popover"] li,
+    div[data-baseweb="popover"] [role="option"] {
         background-color: #111827 !important;
         color: #f3f4f6 !important;
     }
-    div[data-baseweb="popover"] li:hover {
+    div[data-baseweb="popover"] li:hover,
+    div[data-baseweb="popover"] [role="option"]:hover,
+    div[data-baseweb="popover"] li[aria-selected="true"],
+    div[data-baseweb="popover"] [role="option"][aria-selected="true"] {
         background-color: #1f2937 !important;
+        color: #3b82f6 !important;
     }
     button[data-testid="baseButton-secondary"] {
         background-color: #111827 !important;
@@ -176,14 +212,34 @@ LIGHT_THEME_CSS = """
         background-color: #f1f5f9 !important;
         color: #0f172a !important;
     }
-    section[data-testid="stSidebar"] * {
+    section[data-testid="stSidebar"] h1, 
+    section[data-testid="stSidebar"] h2, 
+    section[data-testid="stSidebar"] h3, 
+    section[data-testid="stSidebar"] h4, 
+    section[data-testid="stSidebar"] h5, 
+    section[data-testid="stSidebar"] h6, 
+    section[data-testid="stSidebar"] p, 
+    section[data-testid="stSidebar"] label, 
+    section[data-testid="stSidebar"] span:not([data-baseweb]),
+    section[data-testid="stSidebar"] small, 
+    section[data-testid="stSidebar"] .stMarkdown {
         color: #0f172a !important;
     }
     header[data-testid="stHeader"] {
         background-color: rgba(248, 250, 252, 0.8) !important;
         backdrop-filter: blur(8px);
     }
-    h1, h2, h3, h4, h5, h6, p, label, span, small, .stMarkdown {
+    .stApp h1:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp h2:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp h3:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp h4:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp h5:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp h6:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp p:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp label:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp span:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *):not([data-baseweb]),
+    .stApp small:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *),
+    .stApp .stMarkdown:not([data-testid="stNotification"] *):not(.alert-card-warning *):not(.alert-card-success *):not(.alert-card-danger *) {
         color: #0f172a !important;
     }
     div[data-baseweb="input"] {
@@ -195,6 +251,10 @@ LIGHT_THEME_CSS = """
         color: #0f172a !important;
         background-color: transparent !important;
     }
+    div[data-baseweb="input"] input::placeholder, 
+    div[data-baseweb="input"] textarea::placeholder {
+        color: #9ca3af !important;
+    }
     div[data-baseweb="select"] {
         background-color: #ffffff !important;
         border: 1px solid rgba(15, 23, 42, 0.1) !important;
@@ -204,17 +264,27 @@ LIGHT_THEME_CSS = """
         background-color: transparent !important;
         color: #0f172a !important;
     }
+    div[data-baseweb="select"] span,
+    div[data-baseweb="select"] div {
+        color: #0f172a !important;
+    }
     div[data-baseweb="popover"] {
         background-color: #ffffff !important;
         color: #0f172a !important;
         border: 1px solid rgba(15, 23, 42, 0.1) !important;
     }
-    div[data-baseweb="popover"] * {
+    div[data-baseweb="popover"] ul,
+    div[data-baseweb="popover"] li,
+    div[data-baseweb="popover"] [role="option"] {
         background-color: #ffffff !important;
         color: #0f172a !important;
     }
-    div[data-baseweb="popover"] li:hover {
+    div[data-baseweb="popover"] li:hover,
+    div[data-baseweb="popover"] [role="option"]:hover,
+    div[data-baseweb="popover"] li[aria-selected="true"],
+    div[data-baseweb="popover"] [role="option"][aria-selected="true"] {
         background-color: #f1f5f9 !important;
+        color: #2563eb !important;
     }
     button[data-testid="baseButton-secondary"] {
         background-color: #ffffff !important;
