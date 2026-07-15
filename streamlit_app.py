@@ -260,6 +260,27 @@ DARK_THEME_CSS = """
     }
     .kpi-title { color: #9ca3af !important; }
     .kpi-value { color: #f3f4f6 !important; }
+    .login-box {
+        background-color: #111827 !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        color: #f3f4f6 !important;
+    }
+    .login-title {
+        color: #ffffff !important;
+    }
+    .login-subtitle {
+        color: #9ca3af !important;
+    }
+    div[data-testid="stForm"] {
+        background-color: #111827 !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    }
+    div[data-baseweb="tab-list"] {
+        background-color: transparent !important;
+    }
+    div[data-testid="stTab"] {
+        background-color: transparent !important;
+    }
 """
 
 LIGHT_THEME_CSS = """
@@ -449,6 +470,27 @@ LIGHT_THEME_CSS = """
     }
     .kpi-title { color: #64748b !important; }
     .kpi-value { color: #0f172a !important; }
+    .login-box {
+        background-color: #ffffff !important;
+        border: 1px solid rgba(15, 23, 42, 0.1) !important;
+        color: #0f172a !important;
+    }
+    .login-title {
+        color: #0f172a !important;
+    }
+    .login-subtitle {
+        color: #64748b !important;
+    }
+    div[data-testid="stForm"] {
+        background-color: #ffffff !important;
+        border: 1px solid rgba(15, 23, 42, 0.1) !important;
+    }
+    div[data-baseweb="tab-list"] {
+        background-color: transparent !important;
+    }
+    div[data-testid="stTab"] {
+        background-color: transparent !important;
+    }
 """
 
 if not st.session_state["authenticated"]:
@@ -462,8 +504,6 @@ if not st.session_state["authenticated"]:
         max-width: 480px;
         margin: 60px auto 20px auto;
         padding: 2.5rem;
-        background: rgba(128, 128, 128, 0.05);
-        border: 1px solid rgba(128, 128, 128, 0.15);
         border-radius: 20px;
         box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
         text-align: center;
@@ -475,7 +515,6 @@ if not st.session_state["authenticated"]:
     }}
     .login-subtitle {{
         font-size: 0.85rem;
-        color: #888888;
         margin-bottom: 1.5rem;
     }}
     @media (prefers-color-scheme: dark) {{
