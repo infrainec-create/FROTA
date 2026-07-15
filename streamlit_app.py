@@ -512,7 +512,11 @@ tab_dashboard, tab_vehicles, tab_operations, tab_maintenance, tab_fines, tab_rep
 ])
 
 # Obtém limite de km configurado no banco de dados (padrão 10.000)
-maint_limit_km = int(repo.get_config("maint_threshold", "10000"))
+try:
+    maint_limit_km = int(repo.get_config("maint_threshold", "10000"))
+except AttributeError:
+    st.cache_resource.clear()
+    st.rerun()
 
 with tab_dashboard:
     st.subheader("Indicadores de Desempenho (KPIs)")
