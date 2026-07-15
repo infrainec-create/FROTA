@@ -5,6 +5,7 @@ from datetime import date, datetime, timezone
 import os
 import json
 import sqlite3
+import threading
 from typing import Any
 from uuid import uuid4
 
@@ -33,6 +34,7 @@ class DriveRepository:
         self.google_drive_folder_id = google_drive_folder_id
         self.db_path = "frota_drive.db"
         self.drive_file_id = None
+        self.upload_lock = threading.Lock()
 
         # 1. Tenta baixar o arquivo do Drive se as credenciais existirem
         self._download_from_drive()
@@ -86,42 +88,46 @@ class DriveRepository:
         if not self.service_account or not self.google_drive_folder_id:
             return
 
-        try:
-            session = self._get_session()
+        def run_upload():
+            with self.upload_lock:
+                try:
+                    session = self._get_session()
 
-            # Se não temos o ID do arquivo do Drive, tenta buscar novamente na pasta
-            if not self.drive_file_id:
-                q = f"name='frota.db' and '{self.google_drive_folder_id}' in parents and trashed=false"
-                search_res = session.get("https://www.googleapis.com/drive/v3/files", params={"q": q, "fields": "files(id)"})
-                if search_res.status_code == 200:
-                    files = search_res.json().get("files", [])
-                    if files:
-                        self.drive_file_id = files[0]["id"]
+                    # Se não temos o ID do arquivo do Drive, tenta buscar novamente na pasta
+                    if not self.drive_file_id:
+                        q = f"name='frota.db' and '{self.google_drive_folder_id}' in parents and trashed=false"
+                        search_res = session.get("https://www.googleapis.com/drive/v3/files", params={"q": q, "fields": "files(id)"})
+                        if search_res.status_code == 200:
+                            files = search_res.json().get("files", [])
+                            if files:
+                                self.drive_file_id = files[0]["id"]
 
-            if self.drive_file_id:
-                # Atualiza o arquivo existente
-                with open(self.db_path, "rb") as f:
-                    session.patch(
-                        f"https://www.googleapis.com/upload/drive/v3/files/{self.drive_file_id}?uploadType=media",
-                        data=f.read(),
-                        headers={"Content-Type": "application/x-sqlite3"}
-                    )
-            else:
-                # Cria um novo arquivo dentro da pasta compartilhada do usuário
-                # (isso consome a cota de armazenamento do proprietário da pasta, não do Service Account)
-                metadata = {
-                    "name": "frota.db",
-                    "parents": [self.google_drive_folder_id]
-                }
-                files = {
-                    "data": ("metadata", json.dumps(metadata), "application/json; charset=UTF-8"),
-                    "file": ("frota.db", open(self.db_path, "rb"), "application/x-sqlite3")
-                }
-                res = session.post("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", files=files)
-                if res.status_code == 200:
-                    self.drive_file_id = res.json().get("id")
-        except Exception as e:
-            print(f"Erro ao subir para o Drive: {e}", flush=True)
+                    if self.drive_file_id:
+                        # Atualiza o arquivo existente
+                        with open(self.db_path, "rb") as f:
+                            session.patch(
+                                f"https://www.googleapis.com/upload/drive/v3/files/{self.drive_file_id}?uploadType=media",
+                                data=f.read(),
+                                headers={"Content-Type": "application/x-sqlite3"}
+                            )
+                    else:
+                        # Cria um novo arquivo dentro da pasta compartilhada do usuário
+                        # (isso consome a cota de armazenamento do proprietário da pasta, não do Service Account)
+                        metadata = {
+                            "name": "frota.db",
+                            "parents": [self.google_drive_folder_id]
+                        }
+                        files = {
+                            "data": ("metadata", json.dumps(metadata), "application/json; charset=UTF-8"),
+                            "file": ("frota.db", open(self.db_path, "rb"), "application/x-sqlite3")
+                        }
+                        res = session.post("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", files=files)
+                        if res.status_code == 200:
+                            self.drive_file_id = res.json().get("id")
+                except Exception as e:
+                    print(f"Erro ao subir para o Drive: {e}", flush=True)
+
+        threading.Thread(target=run_upload, daemon=True).start()
 
     def list(self, table: str) -> list[dict[str, Any]]:
         self._validate_table(table)

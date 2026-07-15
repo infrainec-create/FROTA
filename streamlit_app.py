@@ -896,7 +896,8 @@ with tab_dashboard:
     
     if alerts:
         for alert in alerts:
-            st.markdown(f'<div class="alert-card-warning">{alert}</div>', unsafe_allow_html=True)
+            card_class = "alert-card-danger" if "🔴" in alert else "alert-card-warning"
+            st.markdown(f'<div class="{card_class}">{alert}</div>', unsafe_allow_html=True)
     else:
         st.markdown('<div class="alert-card-success">✔️ Todos os veículos e habilitações estão com a documentação e manutenção preventivas em dia!</div>', unsafe_allow_html=True)
         
@@ -961,7 +962,7 @@ with tab_dashboard:
                 f'<div style="width: {pct_fines}%; background: linear-gradient(135deg, #ef4444, #dc2626); text-align: center; color: white; font-size: 11px; line-height: 28px; font-weight: 600;" title="Multas: R$ {total_fines:,.2f}">🚨 {pct_fines:.1f}%</div>' if pct_fines > 0 else ''
             ])}
         </div>
-        <div style="display: flex; justify-content: space-around; font-size: 0.85rem; color: #888888; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-around; font-size: 0.85rem; color: var(--text-color); opacity: 0.8; margin-bottom: 20px;">
             <div>🔵 Abastecimento: <b>R$ {total_fuel:,.2f}</b></div>
             <div>🟢 Manutenção: <b>R$ {total_maint:,.2f}</b></div>
             <div>🔴 Multas: <b>R$ {total_fines:,.2f}</b></div>
