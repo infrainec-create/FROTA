@@ -502,10 +502,10 @@ def generate_pdf_report(table_name: str, df: pd.DataFrame) -> bytes:
 
 
 # Rest of streamlit app logic starts here...
-st.caption("Gestão avançada de frotas com persistência flexível (Google Sheets / JSON)")
+st.caption("Gestão avançada de frotas com banco SQL de alta performance (SQLite / Google Drive Sync)")
 
 if not (secret("gcp_service_account") and (secret("google_drive_folder_id") or secret("google_sheet_id"))):
-    st.warning("⚠️ Executando com banco de dados local (`local_db.json`). Para salvar os dados no Google Drive, configure o arquivo `.streamlit/secrets.toml`.")
+    st.warning("⚠️ Executando com banco de dados SQLite local (`frota_drive.db`). Para sincronizar os dados no Google Drive, configure o arquivo `.streamlit/secrets.toml`.")
 
 tab_dashboard, tab_vehicles, tab_operations, tab_maintenance, tab_fines, tab_reports, tab_logs, tab_settings, tab_ai = st.tabs([
     "📊 Painel Geral", "👥 Veículos e Motoristas", "⚡ Operações Rápidas", "🔧 Manutenção", "🚨 Multas & Infrações", "📑 Relatórios & Filtros", "📁 Auditoria", "⚙️ Configurações", "🤖 Analista IA"
