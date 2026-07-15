@@ -775,7 +775,7 @@ with tab_maintenance:
     with maint_col2:
         st.markdown("##### 📋 Histórico Recente de Serviços")
         if maintenance:
-            df_maint = pd.DataFrame(maintenance)
+            df_maint = safe_dataframe(maintenance, ["maint_date", "vehicle_id", "maint_type", "description", "cost", "odometer"])
             vehicles_dict = {v["id"]: vehicle_label(v) for v in vehicles}
             df_maint["Veículo"] = df_maint["vehicle_id"].map(vehicles_dict).fillna("Veículo Excluído")
             
@@ -805,7 +805,7 @@ with tab_fines:
     
     with fine_tab1:
         if fines:
-            df_fines_list = pd.DataFrame(fines)
+            df_fines_list = safe_dataframe(fines, ["fine_date", "driver_id", "description", "amount", "status"])
             drivers_dict = {d["id"]: d["name"] for d in drivers}
             df_fines_list["Motorista"] = df_fines_list["driver_id"].map(drivers_dict).fillna("Motorista Excluído")
             
