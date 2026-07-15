@@ -255,6 +255,17 @@ def log_action(action: str, details: str):
         pass
 
 
+def safe_dataframe(data: list[dict[str, Any]], columns: list[str]) -> pd.DataFrame:
+    if not data:
+        return pd.DataFrame(columns=columns)
+    df = pd.DataFrame(data)
+    for col in columns:
+        if col not in df.columns:
+            df[col] = ""
+    return df[columns]
+
+
+
 vehicles, drivers, maintenance, fuel, checkins, fines = (rows(name) for name in ("vehicles", "drivers", "maintenance", "fuel", "checkins", "fines"))
 
 st.title("🚚 FrotaControl Pro")
@@ -461,13 +472,13 @@ with tab_vehicles:
         with col_v1:
             st.markdown("##### Veículos Cadastrados")
             if vehicles:
-                st.dataframe(pd.DataFrame(vehicles)[["name", "plate", "year", "status", "ipva_expiry", "insurance_expiry"]], use_container_width=True, hide_index=True)
+                st.dataframe(safe_dataframe(vehicles, ["name", "plate", "year", "status", "ipva_expiry", "insurance_expiry"]), use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum veículo cadastrado.")
         with col_v2:
             st.markdown("##### Motoristas Cadastrados")
             if drivers:
-                st.dataframe(pd.DataFrame(drivers)[["name", "phone", "license", "license_expiry", "status"]], use_container_width=True, hide_index=True)
+                st.dataframe(safe_dataframe(drivers, ["name", "phone", "license", "license_expiry", "status"]), use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum motorista cadastrado.")
                 
