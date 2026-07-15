@@ -12,44 +12,92 @@ from maintenance_ai import analyze_maintenance
 
 st.set_page_config(page_title="FrotaControl Pro", page_icon="🚚", layout="wide")
 
+# Theme Selection in Sidebar
+theme_option = st.sidebar.selectbox(
+    "🌓 Tema da Interface",
+    ["Padrão do Dispositivo", "Escuro Premium", "Claro Elegante"],
+    help="Escolha o estilo visual do sistema."
+)
 
-# Custom Premium Theme Styling
-st.markdown("""
+# Injected CSS based on Theme
+theme_css = ""
+if theme_option == "Escuro Premium":
+    theme_css = """
+    :root {
+        --primary-color: #3b82f6;
+        --background-color: #0b0f19;
+        --secondary-background-color: #111827;
+        --text-color: #f3f4f6;
+    }
+    .stApp {
+        background-color: #0b0f19 !important;
+        color: #f3f4f6 !important;
+    }
+    .kpi-card {
+        background: rgba(255, 255, 255, 0.03) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        color: #f3f4f6 !important;
+    }
+    .kpi-title { color: #9ca3af !important; }
+    .kpi-value { color: #f3f4f6 !important; }
+    """
+elif theme_option == "Claro Elegante":
+    theme_css = """
+    :root {
+        --primary-color: #2563eb;
+        --background-color: #f8fafc;
+        --secondary-background-color: #f1f5f9;
+        --text-color: #0f172a;
+    }
+    .stApp {
+        background-color: #f8fafc !important;
+        color: #0f172a !important;
+    }
+    .kpi-card {
+        background: rgba(15, 23, 42, 0.03) !important;
+        border: 1px solid rgba(15, 23, 42, 0.08) !important;
+        color: #0f172a !important;
+    }
+    .kpi-title { color: #64748b !important; }
+    .kpi-value { color: #0f172a !important; }
+    """
+
+st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
-html, body, [class*="css"] {
+html, body, [class*="css"] {{
     font-family: 'Plus Jakarta Sans', sans-serif;
-}
+}}
+{theme_css}
 /* Card designs */
-.kpi-card {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+.kpi-card {{
+    background: rgba(128, 128, 128, 0.05);
+    border: 1px solid rgba(128, 128, 128, 0.15);
     border-radius: 16px;
     padding: 1.5rem;
     text-align: center;
     transition: all 0.3s ease;
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     margin-bottom: 1rem;
-}
-.kpi-card:hover {
+}}
+.kpi-card:hover {{
     transform: translateY(-2px);
-    border-color: rgba(255, 255, 255, 0.15);
-    background: rgba(255, 255, 255, 0.05);
-}
-.kpi-title {
+    border-color: rgba(128, 128, 128, 0.25);
+    background: rgba(128, 128, 128, 0.08);
+}}
+.kpi-title {{
     font-size: 0.85rem;
-    color: #9ca3af;
+    color: #888888;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     margin-bottom: 0.5rem;
-}
-.kpi-value {
+}}
+.kpi-value {{
     font-size: 2.25rem;
     font-weight: 700;
-    color: #f3f4f6;
-}
+}}
 /* Alert cards */
-.alert-card-warning {
+.alert-card-warning {{
     background-color: rgba(245, 158, 11, 0.1);
     border-left: 4px solid #f59e0b;
     padding: 1rem;
@@ -57,8 +105,8 @@ html, body, [class*="css"] {
     color: #eab308;
     font-size: 0.9rem;
     margin-bottom: 0.8rem;
-}
-.alert-card-success {
+}}
+.alert-card-success {{
     background-color: rgba(16, 185, 129, 0.1);
     border-left: 4px solid #10b981;
     padding: 1rem;
@@ -66,8 +114,8 @@ html, body, [class*="css"] {
     color: #10b981;
     font-size: 0.9rem;
     margin-bottom: 0.8rem;
-}
-.alert-card-danger {
+}}
+.alert-card-danger {{
     background-color: rgba(239, 68, 68, 0.1);
     border-left: 4px solid #ef4444;
     padding: 1rem;
@@ -75,7 +123,7 @@ html, body, [class*="css"] {
     color: #ef4444;
     font-size: 0.9rem;
     margin-bottom: 0.8rem;
-}
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -93,13 +141,26 @@ def get_repository() -> DriveRepository | LocalJsonRepository:
     return DriveRepository(dict(account), str(spreadsheet_id))
 
 
+# Performance caching: avoids calling Google sheets API on every single component interaction
+@st.cache_data(ttl=300)
 def rows(table: str) -> list[dict[str, Any]]:
     return get_repository().list(table)
 
 
 def as_number(value: Any) -> float:
-    try:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
         return float(value)
+    try:
+        s = str(value).replace("R$", "").replace(" ", "").strip()
+        if not s:
+            return 0.0
+        if "," in s and "." in s:
+            s = s.replace(".", "").replace(",", ".")
+        elif "," in s:
+            s = s.replace(",", ".")
+        return float(s)
     except (TypeError, ValueError):
         return 0.0
 
@@ -268,6 +329,7 @@ with tab_vehicles:
                         st.error("Esta placa já está cadastrada.")
                     else:
                         repo.add("vehicles", {"name": name.strip(), "plate": plate, "year": year, "status": status})
+                        st.cache_data.clear()
                         st.success("Veículo salvo com sucesso!")
                         st.rerun()
                         
@@ -283,6 +345,7 @@ with tab_vehicles:
                         st.error("Informe nome e CNH.")
                     else:
                         repo.add("drivers", {"name": d_name.strip(), "phone": phone.strip(), "license": license_number.strip(), "license_expiry": expiry.isoformat() if expiry else "", "status": "Ativo"})
+                        st.cache_data.clear()
                         st.success("Motorista salvo com sucesso!")
                         st.rerun()
                         
@@ -301,6 +364,7 @@ with tab_vehicles:
                     edit_status = st.selectbox("Situação", ["Disponível", "Em uso", "Manutenção", "Inativo"], index=["Disponível", "Em uso", "Manutenção", "Inativo"].index(v_data.get("status", "Disponível")))
                     if st.form_submit_button("Salvar Alterações"):
                         repo.update("vehicles", v_data["id"], {"name": edit_name.strip(), "plate": edit_plate, "year": edit_year, "status": edit_status})
+                        st.cache_data.clear()
                         st.success("Veículo atualizado!")
                         st.rerun()
                         
@@ -330,6 +394,7 @@ with tab_vehicles:
                             "license_expiry": edit_d_expiry.isoformat() if edit_d_expiry else "",
                             "status": edit_d_status
                         })
+                        st.cache_data.clear()
                         st.success("Motorista atualizado!")
                         st.rerun()
 
@@ -344,6 +409,7 @@ with tab_vehicles:
                 confirm_v = st.checkbox("Confirmo a exclusão definitiva do veículo.", key="confirm_v_del")
                 if st.button("Excluir Veículo", type="primary", disabled=not confirm_v):
                     repo.delete("vehicles", v_data["id"])
+                    st.cache_data.clear()
                     st.success("Veículo excluído com sucesso!")
                     st.rerun()
                     
@@ -356,6 +422,7 @@ with tab_vehicles:
                 confirm_d = st.checkbox("Confirmo a exclusão definitiva do motorista.", key="confirm_d_del")
                 if st.button("Excluir Motorista", type="primary", disabled=not confirm_d):
                     repo.delete("drivers", d_data["id"])
+                    st.cache_data.clear()
                     st.success("Motorista excluído com sucesso!")
                     st.rerun()
 
@@ -371,8 +438,8 @@ with tab_operations:
             v = next((vehicle for vehicle in vehicles if vehicle["id"] == item["vehicle_id"]), None)
             d = next((driver for driver in drivers if driver["id"] == item["driver_id"]), None)
             active_checkin_rows.append({
-                "Veículo": vehicle_label(v) if v else "Desconhecido",
-                "Motorista": d["name"] if d else "Desconhecido",
+                "Veículo": vehicle_label(v) if v else "Desconhecido (Excluído)",
+                "Motorista": d["name"] if d else "Desconhecido (Excluído)",
                 "Saída": item.get("checkin_at"),
                 "Odômetro Inicial (km)": f"{as_number(item.get('odometer_start')):,.0f}",
                 "Observações": item.get("notes", "")
@@ -401,6 +468,7 @@ with tab_operations:
                         st.error("O odômetro não pode ser menor que o último registro do veículo.")
                     else:
                         repo.add("fuel", {"vehicle_id": vehicle["id"], "liters": liters, "cost": cost, "fuel_date": fuel_date, "odometer": odometer})
+                        st.cache_data.clear()
                         st.success("Abastecimento registrado com sucesso!")
                         st.rerun()
 
@@ -436,6 +504,7 @@ with tab_operations:
                                 "notes": notes.strip()
                             })
                             repo.update("vehicles", vehicle["id"], {"status": "Em uso"})
+                            st.cache_data.clear()
                             st.success("Check-in aberto!")
                             st.rerun()
 
@@ -443,10 +512,13 @@ with tab_operations:
             if not open_checkins:
                 st.info("Não há check-ins abertos para finalizar.")
             else:
-                checkin_options = {
-                    f"{vehicle_label(next(v for v in vehicles if v['id'] == item['vehicle_id']))} · Saída: {item['checkin_at']}": item
-                    for item in open_checkins
-                }
+                checkin_options = {}
+                for item in open_checkins:
+                    v = next((veh for veh in vehicles if veh["id"] == item["vehicle_id"]), None)
+                    v_label = vehicle_label(v) if v else f"Veículo {item['vehicle_id']} (Excluído)"
+                    lbl = f"{v_label} · Saída: {item.get('checkin_at', '')}"
+                    checkin_options[lbl] = item
+                
                 with st.form("checkout_form", clear_on_submit=True):
                     selected_checkin = st.selectbox("Selecione a Viagem", list(checkin_options))
                     end = st.number_input("Odômetro de Retorno", min_value=0.0, step=1.0)
@@ -458,6 +530,7 @@ with tab_operations:
                         else:
                             repo.update("checkins", checkin["id"], {"checkout_at": checkout_date, "odometer_end": end})
                             repo.update("vehicles", checkin["vehicle_id"], {"status": "Disponível"})
+                            st.cache_data.clear()
                             st.success("Check-in finalizado!")
                             st.rerun()
 
@@ -494,6 +567,7 @@ with tab_maintenance:
                             "maint_date": maint_date,
                             "odometer": odometer
                         })
+                        st.cache_data.clear()
                         st.success("Manutenção registrada com sucesso!")
                         st.rerun()
                         
@@ -502,7 +576,7 @@ with tab_maintenance:
         if maintenance:
             df_maint = pd.DataFrame(maintenance)
             vehicles_dict = {v["id"]: vehicle_label(v) for v in vehicles}
-            df_maint["Veículo"] = df_maint["vehicle_id"].map(vehicles_dict)
+            df_maint["Veículo"] = df_maint["vehicle_id"].map(vehicles_dict).fillna("Veículo Excluído")
             
             df_maint_display = df_maint.copy()
             df_maint_display["cost"] = df_maint_display["cost"].map(lambda x: f"R$ {as_number(x):,.2f}")
@@ -537,7 +611,7 @@ with tab_reports:
         
         if "vehicle_id" in df_report.columns and vehicles:
             v_dict = {v["id"]: vehicle_label(v) for v in vehicles}
-            filtered_df["Nome Veículo"] = filtered_df["vehicle_id"].map(v_dict)
+            filtered_df["Nome Veículo"] = filtered_df["vehicle_id"].map(v_dict).fillna("Veículo Excluído")
             with filter_col1:
                 v_filter = st.selectbox("Filtrar por Veículo", ["Todos"] + list(v_dict.values()))
                 if v_filter != "Todos":
@@ -600,9 +674,9 @@ with tab_ai:
         st.info("Cadastre um veículo e registre manutenções/abastecimentos para poder rodar a IA.")
     else:
         selected_ai = st.selectbox("Escolha o veículo para o Parecer Técnico", [vehicle_label(v) for v in vehicles], key="ai_select")
-        vehicle = next(v for v in vehicles if vehicle_label(v) == selected_ai)
+        vehicle = next((v for v in vehicles if vehicle_label(v) == selected_ai), None)
         
-        if st.button("🚀 Gerar Parecer de IA", type="primary"):
+        if vehicle and st.button("🚀 Gerar Parecer de IA", type="primary"):
             with st.spinner("Analisando padrões de quilometragem, custos e histórico de serviços..."):
                 try:
                     answer = analyze_maintenance(
