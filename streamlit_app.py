@@ -384,6 +384,73 @@ def safe_dataframe(data: list[dict[str, Any]], columns: list[str]) -> pd.DataFra
     return df[columns]
 
 
+# 📄 PDF Export Helper
+def generate_pdf_report(table_name: str, df: pd.DataFrame) -> bytes:
+    from fpdf import FPDF
+    
+    class PremiumPDF(FPDF):
+        def header(self):
+            self.set_font("helvetica", "B", 14)
+            self.cell(0, 10, "FROTA CONTROL PRO - RELATORIO OPERACIONAL", ln=True, align="C")
+            self.set_draw_color(37, 99, 235)  # blue line
+            self.set_line_width(1)
+            self.line(10, self.get_y(), 200, self.get_y())
+            self.ln(10)
+
+        def footer(self):
+            self.set_y(-15)
+            self.set_font("helvetica", "I", 8)
+            self.cell(0, 10, f"Pagina {self.page_no()}/{{nb}}", align="C")
+
+    pdf = PremiumPDF()
+    pdf.alias_nb_pages()
+    pdf.add_page()
+    pdf.set_font("helvetica", "B", 12)
+    pdf.cell(0, 10, f"Tabela de Origem: {table_name.upper()}", ln=True)
+    pdf.set_font("helvetica", "", 9)
+    pdf.cell(0, 5, f"Data de Emissao: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", ln=True)
+    pdf.cell(0, 5, f"Total de Registros: {len(df)}", ln=True)
+    pdf.ln(5)
+
+    cols = list(df.columns)
+    cols_to_show = [c for c in cols if c not in ["id", "vehicle_id", "driver_id", "created_at", "updated_at"]][:6]
+    if not cols_to_show:
+        cols_to_show = cols[:5]
+
+    col_width = 190 / len(cols_to_show)
+
+    # Table Header
+    pdf.set_fill_color(37, 99, 235)  # primary blue
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("helvetica", "B", 8)
+    for col in cols_to_show:
+        pdf.cell(col_width, 8, str(col).upper(), border=1, fill=True, align="C")
+    pdf.ln()
+
+    # Table Rows
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font("helvetica", "", 8)
+    
+    fill = False
+    for _, row in df.iterrows():
+        if fill:
+            pdf.set_fill_color(248, 250, 252)
+        else:
+            pdf.set_fill_color(255, 255, 255)
+            
+        for col in cols_to_show:
+            val = str(row.get(col, ""))
+            # Remove any special unicode chars to avoid FPDF character errors
+            val = val.encode("ascii", "ignore").decode("ascii")
+            if len(val) > 25:
+                val = val[:22] + "..."
+            pdf.cell(col_width, 8, val, border=1, fill=True, align="C")
+        pdf.ln()
+        fill = not fill
+
+    return bytes(pdf.output())
+
+
 # Rest of streamlit app logic starts here...
 st.caption("Gestão avançada de frotas com persistência flexível (Google Sheets / JSON)")
 
@@ -534,6 +601,33 @@ with tab_dashboard:
 
     st.divider()
 
+    # 📊 CUSTOM SEGMENTED COST BREAKDOWN PROGRESS BAR
+    st.markdown("##### 📊 Distribuição Porcentual de Despesas da Frota")
+    total_c = total_fuel + total_maint + total_fines
+    if total_c > 0:
+        pct_fuel = (total_fuel / total_c) * 100
+        pct_maint = (total_maint / total_c) * 100
+        pct_fines = (total_fines / total_c) * 100
+        
+        st.markdown(f"""
+        <div style="display: flex; height: 28px; border-radius: 14px; overflow: hidden; margin: 15px 0 10px 0; background: rgba(128,128,128,0.15); box-shadow: inset 0 2px 4px rgba(0,0,0,0.06);">
+            {"".join([
+                f'<div style="width: {pct_fuel}%; background: linear-gradient(135deg, #3b82f6, #2563eb); text-align: center; color: white; font-size: 11px; line-height: 28px; font-weight: 600;" title="Abastecimento: R$ {total_fuel:,.2f}">⛽ {pct_fuel:.1f}%</div>' if pct_fuel > 0 else '',
+                f'<div style="width: {pct_maint}%; background: linear-gradient(135deg, #10b981, #059669); text-align: center; color: white; font-size: 11px; line-height: 28px; font-weight: 600;" title="Manutenção: R$ {total_maint:,.2f}">🔧 {pct_maint:.1f}%</div>' if pct_maint > 0 else '',
+                f'<div style="width: {pct_fines}%; background: linear-gradient(135deg, #ef4444, #dc2626); text-align: center; color: white; font-size: 11px; line-height: 28px; font-weight: 600;" title="Multas: R$ {total_fines:,.2f}">🚨 {pct_fines:.1f}%</div>' if pct_fines > 0 else ''
+            ])}
+        </div>
+        <div style="display: flex; justify-content: space-around; font-size: 0.85rem; color: #888888; margin-bottom: 20px;">
+            <div>🔵 Abastecimento: <b>R$ {total_fuel:,.2f}</b></div>
+            <div>🟢 Manutenção: <b>R$ {total_maint:,.2f}</b></div>
+            <div>🔴 Multas: <b>R$ {total_fines:,.2f}</b></div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("Ainda não há despesas registradas.")
+
+    st.divider()
+
     # CHARTS SECTION
     st.subheader("Gráficos Analíticos")
     chart_col1, chart_col2 = st.columns(2)
@@ -594,7 +688,28 @@ with tab_vehicles:
         with col_v2:
             st.markdown("##### Motoristas Cadastrados")
             if drivers:
-                st.dataframe(safe_dataframe(drivers, ["name", "phone", "license", "license_expiry", "status"]), use_container_width=True, hide_index=True)
+                df_drivers_view = pd.DataFrame(drivers)
+                open_checkins = [item for item in checkins if not item.get("checkout_at")]
+                drivers_in_transit = {item["driver_id"] for item in open_checkins}
+                
+                def get_driver_status(row):
+                    if row.get("status") == "Inativo":
+                        return "Inativo"
+                    if row.get("id") in drivers_in_transit:
+                        return "Em viagem"
+                    return "Disponível"
+                
+                df_drivers_view["Situação"] = df_drivers_view.apply(get_driver_status, axis=1)
+                for col in ["name", "phone", "license", "license_expiry"]:
+                    if col not in df_drivers_view.columns:
+                        df_drivers_view[col] = ""
+                        
+                st.dataframe(df_drivers_view[["name", "phone", "license", "license_expiry", "Situação"]].rename(columns={
+                    "name": "Nome",
+                    "phone": "Telefone",
+                    "license": "CNH",
+                    "license_expiry": "Vencimento CNH"
+                }), use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum motorista cadastrado.")
                 
@@ -787,16 +902,21 @@ with tab_operations:
                         st.rerun()
 
     with op_col2:
-        tab_flow_1, tab_flow_2 = st.tabs(["🔑 Abrir Check-in", "🏁 Finalizar Check-in"])
+        tab_flow_1, tab_flow_2, tab_flow_3 = st.tabs(["🔑 Abrir Check-in", "🏁 Finalizar Check-in", "📖 Histórico de Viagens"])
         
         with tab_flow_1:
             active_drivers = [driver for driver in drivers if driver.get("status") == "Ativo"]
             available_vehicles = [vehicle for vehicle in vehicles if vehicle.get("status") == "Disponível"]
-            if not active_drivers or not available_vehicles:
-                st.info("É necessário ter pelo menos um motorista ativo e um veículo disponível para abrir check-in.")
+            
+            # Filtra motoristas que já estão em viagem
+            drivers_in_transit = {item["driver_id"] for item in open_checkins}
+            available_drivers = [d for d in active_drivers if d["id"] not in drivers_in_transit]
+            
+            if not available_drivers or not available_vehicles:
+                st.info("É necessário ter pelo menos um motorista ativo (e disponível) e um veículo disponível para abrir check-in.")
             else:
                 vehicle_options = {vehicle_label(vehicle): vehicle for vehicle in available_vehicles}
-                driver_options = {driver["name"]: driver for driver in active_drivers}
+                driver_options = {driver["name"]: driver for driver in available_drivers}
                 with st.form("new_checkin_form", clear_on_submit=True):
                     selected_vehicle = st.selectbox("Veículo", list(vehicle_options), key="checkin_v")
                     selected_driver = st.selectbox("Motorista", list(driver_options), key="checkin_d")
@@ -849,6 +969,30 @@ with tab_operations:
                             st.cache_data.clear()
                             st.success("Check-in finalizado!")
                             st.rerun()
+
+        with tab_flow_3:
+            st.markdown("##### 📖 Viagens Finalizadas (Histórico)")
+            closed_checkins = [item for item in checkins if item.get("checkout_at")]
+            if closed_checkins:
+                closed_rows = []
+                for item in closed_checkins:
+                    v = next((veh for veh in vehicles if veh["id"] == item["vehicle_id"]), None)
+                    d = next((driver for driver in drivers if driver["id"] == item["driver_id"]), None)
+                    odo_start = as_number(item.get("odometer_start"))
+                    odo_end = as_number(item.get("odometer_end"))
+                    dist = odo_end - odo_start if odo_end >= odo_start else 0.0
+                    
+                    closed_rows.append({
+                        "Veículo": vehicle_label(v) if v else "Veículo Excluído",
+                        "Motorista": d["name"] if d else "Motorista Excluído",
+                        "Saída": item.get("checkin_at"),
+                        "Retorno": item.get("checkout_at"),
+                        "Distância": f"{dist:,.0f} km",
+                        "Notas": item.get("notes", "")
+                    })
+                st.dataframe(pd.DataFrame(closed_rows), use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhuma viagem finalizada encontrada no histórico.")
 
 with tab_maintenance:
     st.subheader("Manutenções Preventivas e Corretivas")
@@ -993,7 +1137,7 @@ with tab_fines:
                         })
                         log_action("Edição de Multa", f"Multa ID {fine_data['id']} atualizada.")
                         st.cache_data.clear()
-                        st.success("Multa updated successfully!")
+                        st.success("Multa atualizada com sucesso!")
                         st.rerun()
                         
         with col_fe2:
@@ -1068,13 +1212,28 @@ with tab_reports:
         st.divider()
         st.dataframe(filtered_df, use_container_width=True, hide_index=True)
         
-        csv_data = filtered_df.to_csv(index=False).encode("utf-8-sig")
-        st.download_button(
-            "📥 Baixar Relatório Filtrado (CSV)", 
-            csv_data, 
-            f"relatorio_filtrado_{report_name}.csv", 
-            "text/csv"
-        )
+        down_col1, down_col2 = st.columns(2)
+        with down_col1:
+            csv_data = filtered_df.to_csv(index=False).encode("utf-8-sig")
+            st.download_button(
+                "📥 Baixar Relatório (CSV)", 
+                csv_data, 
+                f"relatorio_filtrado_{report_name}.csv", 
+                "text/csv",
+                use_container_width=True
+            )
+        with down_col2:
+            try:
+                pdf_data = generate_pdf_report(report_name, filtered_df)
+                st.download_button(
+                    "📄 Baixar Relatório (PDF)", 
+                    pdf_data, 
+                    f"relatorio_filtrado_{report_name}.pdf", 
+                    "application/pdf",
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.error(f"Erro ao gerar PDF: {e}")
     else:
         st.info("Ainda não há dados cadastrados nessa categoria para gerar relatórios.")
 
@@ -1112,19 +1271,23 @@ with tab_ai:
         selected_ai = st.selectbox("Escolha o veículo para o Parecer Técnico", [vehicle_label(v) for v in vehicles], key="ai_select")
         vehicle = next((v for v in vehicles if vehicle_label(v) == selected_ai), None)
         
+        ai_mode = st.radio("Selecione o Tipo de Análise da IA", ["Parecer Técnico Geral", "Previsão Orçamentária (Próximo Mês)"], horizontal=True)
+        
         if vehicle and st.button("🚀 Gerar Parecer de IA", type="primary"):
             with st.spinner("Analisando padrões de quilometragem, custos e histórico de serviços..."):
                 try:
+                    mode_val = "budget" if ai_mode == "Previsão Orçamentária (Próximo Mês)" else "general"
                     answer = analyze_maintenance(
                         str(api_key), vehicle,
                         [m for m in maintenance if m.get("vehicle_id") == vehicle["id"]],
                         [f for f in fuel if f.get("vehicle_id") == vehicle["id"]],
+                        mode=mode_val
                     )
                     
                     low_answer = answer.lower()
-                    if "crítico" in low_answer or "critico" in low_answer:
+                    if "critico" in low_answer or "crítico" in low_answer:
                         st.markdown('<div class="alert-card-danger">🚨 **Risco Identificado:** A IA apontou pontos CRÍTICOS que exigem atenção urgente no veículo!</div>', unsafe_allow_html=True)
-                    elif "atenção" in low_answer or "atencao" in low_answer:
+                    elif "atencao" in low_answer or "atenção" in low_answer:
                         st.markdown('<div class="alert-card-warning">⚠️ **Alerta:** A IA sugere monitoramento e ações preventivas em breve.</div>', unsafe_allow_html=True)
                     else:
                         st.markdown('<div class="alert-card-success">✔️ **Sem Riscos Imediatos:** A IA sugere apenas monitoramento regular.</div>', unsafe_allow_html=True)
