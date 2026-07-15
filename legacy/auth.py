@@ -30,6 +30,9 @@ def _too_many_attempts(identifier):
     attempts = _attempts[identifier]
     while attempts and now - attempts[0] > 15 * 60:
         attempts.popleft()
+    if not attempts:
+        _attempts.pop(identifier, None)
+        return False
     return len(attempts) >= 5
 
 

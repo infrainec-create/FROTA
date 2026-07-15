@@ -78,3 +78,72 @@ class DriveRepository:
     def _validate_table(table: str) -> None:
         if table not in TABLES:
             raise ValueError("Tabela inválida.")
+
+
+class LocalJsonRepository:
+    """Repositório local em arquivo JSON para testes sem credenciais do Google Drive."""
+
+    def __init__(self, filepath: str = "local_db.json"):
+        self.filepath = filepath
+        self._ensure_schema()
+
+    def _ensure_schema(self) -> None:
+        import os
+        import json
+        if not os.path.exists(self.filepath):
+            with open(self.filepath, "w", encoding="utf-8") as f:
+                json.dump({table: [] for table in TABLES}, f, indent=2)
+
+    def _load(self) -> dict[str, list[dict[str, Any]]]:
+        import json
+        try:
+            with open(self.filepath, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {table: [] for table in TABLES}
+
+    def _save(self, data: dict[str, list[dict[str, Any]]]) -> None:
+        import json
+        with open(self.filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+    def list(self, table: str) -> list[dict[str, Any]]:
+        self._validate_table(table)
+        return self._load().get(table, [])
+
+    def add(self, table: str, values: dict[str, Any]) -> dict[str, Any]:
+        self._validate_table(table)
+        data = self._load()
+        record = {
+            "id": str(uuid4()),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            **{k: self._serialize(v) for k, v in values.items()},
+        }
+        data.setdefault(table, []).append(record)
+        self._save(data)
+        return record
+
+    def update(self, table: str, record_id: str, values: dict[str, Any]) -> None:
+        self._validate_table(table)
+        data = self._load()
+        records = data.get(table, [])
+        for record in records:
+            if str(record.get("id")) == str(record_id):
+                record.update({k: self._serialize(v) for k, v in values.items()})
+                self._save(data)
+                return
+        raise KeyError(f"Registro {record_id} não encontrado em {table}.")
+
+    @staticmethod
+    def _serialize(value: Any) -> str | int | float:
+        if value is None:
+            return ""
+        if isinstance(value, (date, datetime)):
+            return value.isoformat()
+        return value
+
+    @staticmethod
+    def _validate_table(table: str) -> None:
+        if table not in TABLES:
+            raise ValueError("Tabela inválida.")
+

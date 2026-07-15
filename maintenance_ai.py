@@ -14,16 +14,23 @@ def analyze_maintenance(api_key: str, vehicle: dict[str, Any], maintenance: list
         ensure_ascii=False,
         default=str,
     )
-    response = OpenAI(api_key=api_key).responses.create(
-        model="gpt-5",
-        store=False,
-        instructions=(
-            "Você é um analista de manutenção de frota. Responda em português do Brasil, "
-            "usando somente os registros recebidos. Avalie padrões de custo, frequência e "
-            "quilometragem; priorize riscos em Crítico, Atenção ou Monitorar e dê ações objetivas. "
-            "Não invente falhas ou dados. Informe incertezas. Termine com: 'Este parecer é apoio "
-            "à decisão e não substitui a inspeção de um profissional qualificado.'"
-        ),
-        input=f"Analise os dados desta frota/veículo:\n{context}",
+    response = OpenAI(api_key=api_key).chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Você é um analista de manutenção de frota. Responda em português do Brasil, "
+                    "usando somente os registros recebidos. Avalie padrões de custo, frequência e "
+                    "quilometragem; priorize riscos em Crítico, Atenção ou Monitorar e dê ações objetivas. "
+                    "Não invente falhas ou dados. Informe incertezas. Termine com: 'Este parecer é apoio "
+                    "à decisão e não substitui a inspeção de um profissional qualificado.'"
+                )
+            },
+            {
+                "role": "user",
+                "content": f"Analise os dados desta frota/veículo:\n{context}"
+            }
+        ]
     )
-    return response.output_text
+    return response.choices[0].message.content or ""

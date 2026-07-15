@@ -6,7 +6,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from drive_repository import DriveRepository
+from drive_repository import DriveRepository, LocalJsonRepository
 from maintenance_ai import analyze_maintenance
 
 
@@ -18,11 +18,11 @@ def secret(name: str, default: Any = None) -> Any:
 
 
 @st.cache_resource
-def repository() -> DriveRepository:
+def repository() -> DriveRepository | LocalJsonRepository:
     account = secret("gcp_service_account")
     spreadsheet_id = secret("google_sheet_id")
     if not account or not spreadsheet_id:
-        raise RuntimeError("Configure gcp_service_account e google_sheet_id em .streamlit/secrets.toml.")
+        return LocalJsonRepository("local_db.json")
     return DriveRepository(dict(account), str(spreadsheet_id))
 
 
@@ -52,18 +52,13 @@ def vehicle_odometer(vehicle_id: str, fuel: list[dict[str, Any]], maintenance: l
     return max(values, default=0.0)
 
 
-try:
-    repo = repository()
-except Exception as exc:
-    st.title("🚚 FrotaControl")
-    st.error("O banco de dados no Google Drive ainda não foi conectado.")
-    st.code(str(exc), language=None)
-    st.info("Siga a seção 'Configuração do Streamlit Cloud' no README. Nenhuma credencial deve ser enviada ao GitHub.")
-    st.stop()
+repo = repository()
 
 vehicles, drivers, maintenance, fuel, checkins, fines = (rows(name) for name in ("vehicles", "drivers", "maintenance", "fuel", "checkins", "fines"))
 st.title("🚚 FrotaControl")
 st.caption("Gestão de frota com dados privados no Google Drive")
+if not (secret("gcp_service_account") and secret("google_sheet_id")):
+    st.warning("⚠️ Executando com banco de dados local (`local_db.json`). Para salvar os dados no Google Drive, configure o arquivo `.streamlit/secrets.toml`.")
 
 tab_dashboard, tab_vehicles, tab_operations, tab_maintenance, tab_reports, tab_ai = st.tabs([
     "Painel", "Veículos e motoristas", "Operações", "Manutenção", "Relatórios", "Analista IA",
