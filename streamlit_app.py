@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone, timedelta
 import hashlib
 import time
+import urllib.parse
 from typing import Any
 
 import pandas as pd
@@ -506,18 +507,77 @@ st.caption("Gestão avançada de frotas com persistência flexível (Google Shee
 if not (secret("gcp_service_account") and (secret("google_drive_folder_id") or secret("google_sheet_id"))):
     st.warning("⚠️ Executando com banco de dados local (`local_db.json`). Para salvar os dados no Google Drive, configure o arquivo `.streamlit/secrets.toml`.")
 
-tab_dashboard, tab_vehicles, tab_operations, tab_maintenance, tab_fines, tab_reports, tab_logs, tab_ai = st.tabs([
-    "📊 Painel Geral", "👥 Veículos e Motoristas", "⚡ Operações Rápidas", "🔧 Manutenção", "🚨 Multas & Infrações", "📑 Relatórios & Filtros", "📁 Auditoria", "🤖 Analista IA"
+tab_dashboard, tab_vehicles, tab_operations, tab_maintenance, tab_fines, tab_reports, tab_logs, tab_settings, tab_ai = st.tabs([
+    "📊 Painel Geral", "👥 Veículos e Motoristas", "⚡ Operações Rápidas", "🔧 Manutenção", "🚨 Multas & Infrações", "📑 Relatórios & Filtros", "📁 Auditoria", "⚙️ Configurações", "🤖 Analista IA"
 ])
+
+# Obtém limite de km configurado no banco de dados (padrão 10.000)
+maint_limit_km = int(repo.get_config("maint_threshold", "10000"))
 
 with tab_dashboard:
     st.subheader("Indicadores de Desempenho (KPIs)")
     
+    # 📆 FILTRO TEMPORAL NO DASHBOARD
+    dash_col_f1, dash_col_f2 = st.columns(2)
+    with dash_col_f1:
+        selected_year = st.selectbox("Filtrar Ano", ["Todos"] + list(range(datetime.today().year - 2, datetime.today().year + 2)), key="dash_year")
+    with dash_col_f2:
+        months_map = {
+            "Todos": None, "Janeiro": 1, "Fevereiro": 2, "Março": 3, "Abril": 4, "Maio": 5, "Junho": 6,
+            "Julho": 7, "Agosto": 8, "Setembro": 9, "Outubro": 10, "Novembro": 11, "Dezembro": 12
+        }
+        selected_month_name = st.selectbox("Filtrar Mês", list(months_map.keys()), key="dash_month")
+        selected_month = months_map[selected_month_name]
+        
+    # Filtra despesas com base no ano/mês selecionado
+    filtered_maint = []
+    for m in maintenance:
+        d_str = m.get("maint_date") or m.get("created_at")
+        if d_str:
+            try:
+                dt = datetime.strptime(d_str[:10], "%Y-%m-%d")
+                if selected_year != "Todos" and dt.year != int(selected_year):
+                    continue
+                if selected_month is not None and dt.month != selected_month:
+                    continue
+            except ValueError:
+                pass
+        filtered_maint.append(m)
+        
+    filtered_fuel = []
+    for f in fuel:
+        d_str = f.get("fuel_date") or f.get("created_at")
+        if d_str:
+            try:
+                dt = datetime.strptime(d_str[:10], "%Y-%m-%d")
+                if selected_year != "Todos" and dt.year != int(selected_year):
+                    continue
+                if selected_month is not None and dt.month != selected_month:
+                    continue
+            except ValueError:
+                pass
+        filtered_fuel.append(f)
+        
+    filtered_fines = []
+    for fi in fines:
+        d_str = fi.get("fine_date") or fi.get("created_at")
+        if d_str:
+            try:
+                dt = datetime.strptime(d_str[:10], "%Y-%m-%d")
+                if selected_year != "Todos" and dt.year != int(selected_year):
+                    continue
+                if selected_month is not None and dt.month != selected_month:
+                    continue
+            except ValueError:
+                pass
+        filtered_fines.append(fi)
+    
     active = sum(v.get("status") == "Disponível" for v in vehicles)
     in_maintenance = sum(v.get("status") == "Manutenção" for v in vehicles)
-    total_maint = sum(as_number(m.get("cost")) for m in maintenance)
-    total_fuel = sum(as_number(f.get("cost")) for f in fuel)
-    total_fines = sum(as_number(fi.get("amount")) for fi in fines)
+    
+    total_maint = sum(as_number(m.get("cost")) for m in filtered_maint)
+    total_fuel = sum(as_number(f.get("cost")) for f in filtered_fuel)
+    total_fines = sum(as_number(fi.get("amount")) for fi in filtered_fines)
     total_cost = total_maint + total_fuel + total_fines
     
     col_a, col_b, col_c, col_d = st.columns(4)
@@ -545,7 +605,7 @@ with tab_dashboard:
     with col_d:
         st.markdown(f"""
         <div class="kpi-card">
-            <div class="kpi-title">Custo Acumulado</div>
+            <div class="kpi-title">Custo no Período</div>
             <div class="kpi-value" style="color: #3b82f6;">R$ {total_cost:,.2f}</div>
         </div>
         """, unsafe_allow_html=True)
@@ -555,12 +615,12 @@ with tab_dashboard:
     today = date.today()
     in_30_days = today + timedelta(days=30)
     
-    # Vehicle Expiration & Maintenance Alerts
+    # Vehicle Expiration & Maintenance Alerts using the custom threshold setting
     for vehicle in vehicles:
         current = vehicle_odometer(vehicle["id"], fuel, maintenance, checkins)
         history = [as_number(m.get("odometer")) for m in maintenance if m.get("vehicle_id") == vehicle["id"]]
-        if current >= 10000 and (not history or current - max(history) >= 10000):
-            alerts.append(f"🔧 **Manutenção Preventiva**: {vehicle_label(vehicle)} necessita de revisão (odômetro atual: **{current:,.0f} km**).")
+        if current >= maint_limit_km and (not history or current - max(history) >= maint_limit_km):
+            alerts.append(f"🔧 **Manutenção Preventiva**: {vehicle_label(vehicle)} necessita de revisão (limite: {maint_limit_km:,} km, odômetro atual: **{current:,.0f} km**).")
         
         # IPVA Alert
         ipva_str = vehicle.get("ipva_expiry")
@@ -607,8 +667,8 @@ with tab_dashboard:
         
     st.divider()
     
-    # 📊 EFFICIENCY SUMMARY TABLE
-    st.markdown("### 📊 Eficiência & Custos por Veículo")
+    # 📊 EFFICIENCY SUMMARY TABLE (stays all-time for cumulative accuracy)
+    st.markdown("### 📊 Eficiência & Custos por Veículo (Histórico Acumulado)")
     metrics_rows = []
     for v in vehicles:
         v_id = v["id"]
@@ -651,7 +711,7 @@ with tab_dashboard:
     st.divider()
 
     # 📊 CUSTOM SEGMENTED COST BREAKDOWN PROGRESS BAR
-    st.markdown("##### 📊 Distribuição Porcentual de Despesas da Frota")
+    st.markdown("##### 📊 Distribuição Porcentual de Despesas da Frota no Período")
     total_c = total_fuel + total_maint + total_fines
     if total_c > 0:
         pct_fuel = (total_fuel / total_c) * 100
@@ -673,7 +733,7 @@ with tab_dashboard:
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.info("Ainda não há despesas registradas.")
+        st.info("Ainda não há despesas registradas no período selecionado.")
 
     st.divider()
 
@@ -684,7 +744,7 @@ with tab_dashboard:
     with chart_col1:
         st.markdown("##### ⛽ vs 🔧 Despesas Mensais por Categoria")
         costs_data = []
-        for m in maintenance:
+        for m in filtered_maint:
             cost_val = as_number(m.get("cost"))
             maint_date_str = m.get("maint_date")
             if maint_date_str:
@@ -693,7 +753,7 @@ with tab_dashboard:
                     costs_data.append({"Mês": month_str, "Categoria": "Manutenção", "Valor": cost_val})
                 except ValueError:
                     pass
-        for f in fuel:
+        for f in filtered_fuel:
             cost_val = as_number(f.get("cost"))
             fuel_date_str = f.get("fuel_date")
             if fuel_date_str:
@@ -914,14 +974,29 @@ with tab_operations:
         for item in open_checkins:
             v = next((vehicle for vehicle in vehicles if vehicle["id"] == item["vehicle_id"]), None)
             d = next((driver for driver in drivers if driver["id"] == item["driver_id"]), None)
+            
+            dest = item.get("destination", "").strip()
+            map_link = ""
+            if dest:
+                map_link = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(dest)}"
+                
             active_checkin_rows.append({
                 "Veículo": vehicle_label(v) if v else "Desconhecido (Excluído)",
                 "Motorista": d["name"] if d else "Desconhecido (Excluído)",
                 "Saída": item.get("checkin_at"),
-                "Odômetro Inicial (km)": f"{as_number(item.get('odometer_start')):,.0f}",
+                "Destino": dest,
+                "Mapa": map_link,
+                "Odômetro Inicial": f"{as_number(item.get('odometer_start')):,.0f} km",
                 "Observações": item.get("notes", "")
             })
-        st.dataframe(pd.DataFrame(active_checkin_rows), use_container_width=True, hide_index=True)
+            
+        st.dataframe(
+            pd.DataFrame(active_checkin_rows),
+            column_config={
+                "Mapa": st.column_config.LinkColumn("Mapa", help="Clique para ver o destino no Google Maps")
+            },
+            use_container_width=True, hide_index=True
+        )
         st.divider()
 
     st.markdown("##### Realizar Novas Operações")
@@ -932,23 +1007,52 @@ with tab_operations:
         if not vehicles:
             st.info("Cadastre veículos primeiro.")
         else:
-            by_label_active = {vehicle_label(v): v for v in vehicles if v.get("status") != "Inativo"}
-            with st.form("new_fuel_form", clear_on_submit=True):
-                selected = st.selectbox("Veículo", list(by_label_active))
-                liters = st.number_input("Litros", min_value=0.01, step=1.0)
-                cost = st.number_input("Custo Total (R$)", min_value=0.01, step=1.0)
-                odometer = st.number_input("Odômetro Atual", min_value=0.0, step=1.0)
-                fuel_date = st.date_input("Data", value=date.today())
-                if st.form_submit_button("Salvar Abastecimento"):
-                    vehicle = by_label_active[selected]
-                    if odometer < vehicle_odometer(vehicle["id"], fuel, maintenance, checkins):
-                        st.error("O odômetro não pode ser menor que o último registro do veículo.")
-                    else:
-                        repo.add("fuel", {"vehicle_id": vehicle["id"], "liters": liters, "cost": cost, "fuel_date": fuel_date, "odometer": odometer})
-                        log_action("Registro de Abastecimento", f"Abastecimento de {liters}L para {selected}.")
-                        st.cache_data.clear()
-                        st.success("Abastecimento registrado com sucesso!")
-                        st.rerun()
+            # 🚀 AVISOS DE CONSUMO E MUNICÍPIOS LIVE (SEM FORM DE BLOQUEIO)
+            by_label_active = {vehicle_label(v): v for v in vehicles if v.get("status") != "Inactive"}
+            selected = st.selectbox("Veículo", list(by_label_active), key="fuel_v_select")
+            liters = st.number_input("Litros", min_value=0.01, step=1.0, value=30.0, key="fuel_liters")
+            cost = st.number_input("Custo Total (R$)", min_value=0.01, step=1.0, value=150.0, key="fuel_cost")
+            odometer = st.number_input("Odômetro Atual", min_value=0.0, step=1.0, value=0.0, key="fuel_odo")
+            fuel_date = st.date_input("Data", value=date.today(), key="fuel_date")
+
+            vehicle = by_label_active[selected]
+            last_odo = vehicle_odometer(vehicle["id"], fuel, maintenance, checkins)
+            diff_odo = odometer - last_odo if odometer > last_odo else 0.0
+            kml_calc = diff_odo / liters if liters > 0 else 0.0
+            cost_per_liter = cost / liters if liters > 0 else 0.0
+
+            st.markdown(f"""
+            <div style="background: rgba(128,128,128,0.05); padding: 12px; border-radius: 8px; margin: 10px 0; border: 1px solid rgba(128,128,128,0.1);">
+                📈 <b>Métricas Calculadas para o Abastecimento:</b><br/>
+                • Consumo Médio do Ciclo: <b>{kml_calc:.2f} km/L</b> (KM Percorridos: {diff_odo:,.0f} km)<br/>
+                • Preço por Litro: <b>R$ {cost_per_liter:.2f}/L</b>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Alerta Inteligente de Consumo Incomum
+            is_abnormal = last_odo > 0 and diff_odo > 0 and (kml_calc < 3.0 or kml_calc > 28.0)
+            confirm_save_abnormal = True
+            if is_abnormal:
+                st.warning(f"⚠️ **Consumo Incomum Detectado:** A média de consumo ({kml_calc:.2f} km/L) está fora dos padrões normais de operação (3 a 28 km/L). Por favor, certifique-se de que os litros e a quilometragem do painel estão corretos.")
+                confirm_save_abnormal = st.checkbox("Confirmo que os dados de consumo incomum estão corretos e desejo salvar mesmo assim.", key="confirm_abnormal_fuel")
+
+            if st.button("Salvar Abastecimento", type="primary", use_container_width=True):
+                if odometer < last_odo:
+                    st.error(f"Erro: O odômetro digitado é menor do que o último registro deste veículo ({last_odo:,.0f} km).")
+                elif is_abnormal and not confirm_save_abnormal:
+                    st.error("Erro: Marque a caixa de confirmação de consumo incomum para salvar.")
+                else:
+                    repo.add("fuel", {
+                        "vehicle_id": vehicle["id"],
+                        "liters": liters,
+                        "cost": cost,
+                        "fuel_date": fuel_date,
+                        "odometer": odometer
+                    })
+                    log_action("Registro de Abastecimento", f"Abastecimento de {liters}L para {selected}. Consumo: {kml_calc:.2f} km/L.")
+                    st.cache_data.clear()
+                    st.success("Abastecimento salvo com sucesso!")
+                    st.rerun()
 
     with op_col2:
         tab_flow_1, tab_flow_2, tab_flow_3 = st.tabs(["🔑 Abrir Check-in", "🏁 Finalizar Check-in", "📖 Histórico de Viagens"])
@@ -957,7 +1061,7 @@ with tab_operations:
             active_drivers = [driver for driver in drivers if driver.get("status") == "Ativo"]
             available_vehicles = [vehicle for vehicle in vehicles if vehicle.get("status") == "Disponível"]
             
-            # Filtra motoristas que já estão em viagem
+            # Filtra motoristas em trânsito
             drivers_in_transit = {item["driver_id"] for item in open_checkins}
             available_drivers = [d for d in active_drivers if d["id"] not in drivers_in_transit]
             
@@ -969,6 +1073,7 @@ with tab_operations:
                 with st.form("new_checkin_form", clear_on_submit=True):
                     selected_vehicle = st.selectbox("Veículo", list(vehicle_options), key="checkin_v")
                     selected_driver = st.selectbox("Motorista", list(driver_options), key="checkin_d")
+                    destination = st.text_input("Destino / Cidade")
                     start = st.number_input("Odômetro de Saída", min_value=0.0, step=1.0)
                     checkin_date = st.date_input("Data de Saída", value=date.today(), key="checkin_d_input")
                     notes = st.text_area("Observações")
@@ -984,10 +1089,11 @@ with tab_operations:
                                 "checkout_at": "",
                                 "odometer_start": start,
                                 "odometer_end": "",
+                                "destination": destination.strip(),
                                 "notes": notes.strip()
                             })
                             repo.update("vehicles", vehicle["id"], {"status": "Em uso"})
-                            log_action("Abertura de Check-in", f"Veículo {selected_vehicle} retirado por {selected_driver}.")
+                            log_action("Abertura de Check-in", f"Veículo {selected_vehicle} retirado por {selected_driver} com destino a {destination}.")
                             st.cache_data.clear()
                             st.success("Check-in aberto!")
                             st.rerun()
@@ -1031,15 +1137,28 @@ with tab_operations:
                     odo_end = as_number(item.get("odometer_end"))
                     dist = odo_end - odo_start if odo_end >= odo_start else 0.0
                     
+                    dest = item.get("destination", "").strip()
+                    map_link = ""
+                    if dest:
+                        map_link = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(dest)}"
+
                     closed_rows.append({
                         "Veículo": vehicle_label(v) if v else "Veículo Excluído",
                         "Motorista": d["name"] if d else "Motorista Excluído",
                         "Saída": item.get("checkin_at"),
                         "Retorno": item.get("checkout_at"),
+                        "Destino": dest,
+                        "Mapa": map_link,
                         "Distância": f"{dist:,.0f} km",
                         "Notas": item.get("notes", "")
                     })
-                st.dataframe(pd.DataFrame(closed_rows), use_container_width=True, hide_index=True)
+                st.dataframe(
+                    pd.DataFrame(closed_rows),
+                    column_config={
+                        "Mapa": st.column_config.LinkColumn("Mapa", help="Clique para ver o destino no Google Maps")
+                    },
+                    use_container_width=True, hide_index=True
+                )
             else:
                 st.info("Nenhuma viagem finalizada encontrada no histórico.")
 
@@ -1306,6 +1425,26 @@ with tab_logs:
         )
     else:
         st.info("Nenhum registro de auditoria disponível.")
+
+with tab_settings:
+    st.subheader("⚙️ Configurações Gerais do Sistema")
+    st.caption("Ajuste as metas, limites e comportamentos operacionais do FrotaControl Pro.")
+    
+    st.markdown("##### 🔧 Limite de Revisão Preventiva")
+    new_limit_km = st.number_input(
+        "Frequência de Manutenção Preventiva (km)",
+        min_value=1000,
+        max_value=100000,
+        value=maint_limit_km,
+        step=1000,
+        help="Ajuste o odômetro limite acumulado para alertas de preventiva dos veículos."
+    )
+    
+    if st.button("Salvar Configurações", type="primary"):
+        repo.set_config("maint_threshold", str(new_limit_km))
+        st.cache_data.clear()
+        st.success("Configurações atualizadas e sincronizadas no Google Drive!")
+        st.rerun()
 
 with tab_ai:
     st.subheader("🤖 Analista de Manutenção Inteligente")

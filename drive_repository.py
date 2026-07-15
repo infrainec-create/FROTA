@@ -18,9 +18,10 @@ TABLES: dict[str, list[str]] = {
     "drivers": ["id", "name", "phone", "license", "license_expiry", "status", "created_at"],
     "maintenance": ["id", "vehicle_id", "description", "cost", "maint_date", "odometer", "maint_type", "created_at"],
     "fuel": ["id", "vehicle_id", "liters", "cost", "fuel_date", "odometer", "created_at"],
-    "checkins": ["id", "vehicle_id", "driver_id", "checkin_at", "checkout_at", "odometer_start", "odometer_end", "notes", "created_at"],
+    "checkins": ["id", "vehicle_id", "driver_id", "checkin_at", "checkout_at", "odometer_start", "odometer_end", "destination", "notes", "created_at"],
     "fines": ["id", "driver_id", "description", "amount", "fine_date", "status", "created_at"],
     "audit_log": ["id", "action", "details", "created_at"],
+    "config": ["key", "value"],
 }
 
 
@@ -187,6 +188,26 @@ class DriveRepository:
         cursor = conn.cursor()
         for table in TABLES.keys():
             cursor.execute(f"DELETE FROM {table}")
+        conn.commit()
+        conn.close()
+        self._upload_to_drive()
+
+    def get_config(self, key: str, default: Any = None) -> str:
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT value FROM config WHERE key = ?", (key,))
+            row = cursor.fetchone()
+            val = row[0] if row else default
+        except sqlite3.OperationalError:
+            val = default
+        conn.close()
+        return val
+
+    def set_config(self, key: str, value: Any) -> None:
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, str(value)))
         conn.commit()
         conn.close()
         self._upload_to_drive()
