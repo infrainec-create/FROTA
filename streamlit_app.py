@@ -69,14 +69,194 @@ if st.session_state["authenticated"]:
             st.rerun()
     st.session_state["last_activity"] = time.time()
 
+# Constants for Custom Theme CSS Overrides
+DARK_THEME_CSS = """
+    :root {
+        --primary-color: #3b82f6;
+        --background-color: #0b0f19;
+        --secondary-background-color: #111827;
+        --text-color: #f3f4f6;
+    }
+    .stApp {
+        background-color: #0b0f19 !important;
+        color: #f3f4f6 !important;
+    }
+    section[data-testid="stSidebar"] {
+        background-color: #111827 !important;
+        color: #f3f4f6 !important;
+    }
+    section[data-testid="stSidebar"] *, section[data-testid="stSidebar"] span, section[data-testid="stSidebar"] p {
+        color: #f3f4f6 !important;
+    }
+    header[data-testid="stHeader"] {
+        background-color: rgba(11, 15, 25, 0.8) !important;
+        backdrop-filter: blur(8px);
+    }
+    h1, h2, h3, h4, h5, h6, p, label, span, small, .stMarkdown {
+        color: #f3f4f6 !important;
+    }
+    div[data-baseweb="input"] {
+        background-color: #111827 !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        border-radius: 8px;
+    }
+    div[data-baseweb="input"] input, div[data-baseweb="input"] textarea {
+        color: #f3f4f6 !important;
+        background-color: transparent !important;
+    }
+    div[data-baseweb="select"] {
+        background-color: #111827 !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        border-radius: 8px;
+    }
+    div[data-baseweb="select"] > div {
+        background-color: transparent !important;
+        color: #f3f4f6 !important;
+    }
+    div[data-baseweb="popover"] {
+        background-color: #111827 !important;
+        color: #f3f4f6 !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    }
+    div[data-baseweb="popover"] * {
+        background-color: #111827 !important;
+        color: #f3f4f6 !important;
+    }
+    div[data-baseweb="popover"] li:hover {
+        background-color: #1f2937 !important;
+    }
+    button[data-testid="baseButton-secondary"] {
+        background-color: #111827 !important;
+        color: #f3f4f6 !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    }
+    button[data-testid="baseButton-secondary"]:hover {
+        background-color: #1f2937 !important;
+        border-color: #3b82f6 !important;
+    }
+    button[data-testid="baseButton-primary"] {
+        background-color: #3b82f6 !important;
+        color: #ffffff !important;
+    }
+    button[data-testid="baseButton-primary"]:hover {
+        background-color: #2563eb !important;
+    }
+    button[data-baseweb="tab"] {
+        color: #9ca3af !important;
+    }
+    button[data-baseweb="tab"][aria-selected="true"] {
+        color: #3b82f6 !important;
+        border-bottom-color: #3b82f6 !important;
+    }
+    div[data-testid="stExpander"] {
+        background-color: #111827 !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    }
+    .kpi-card {
+        background: rgba(255, 255, 255, 0.03) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        color: #f3f4f6 !important;
+    }
+    .kpi-title { color: #9ca3af !important; }
+    .kpi-value { color: #f3f4f6 !important; }
+"""
+
+LIGHT_THEME_CSS = """
+    :root {
+        --primary-color: #2563eb;
+        --background-color: #f8fafc;
+        --secondary-background-color: #f1f5f9;
+        --text-color: #0f172a;
+    }
+    .stApp {
+        background-color: #f8fafc !important;
+        color: #0f172a !important;
+    }
+    section[data-testid="stSidebar"] {
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
+    }
+    section[data-testid="stSidebar"] * {
+        color: #0f172a !important;
+    }
+    header[data-testid="stHeader"] {
+        background-color: rgba(248, 250, 252, 0.8) !important;
+        backdrop-filter: blur(8px);
+    }
+    h1, h2, h3, h4, h5, h6, p, label, span, small, .stMarkdown {
+        color: #0f172a !important;
+    }
+    div[data-baseweb="input"] {
+        background-color: #ffffff !important;
+        border: 1px solid rgba(15, 23, 42, 0.1) !important;
+        border-radius: 8px;
+    }
+    div[data-baseweb="input"] input, div[data-baseweb="input"] textarea {
+        color: #0f172a !important;
+        background-color: transparent !important;
+    }
+    div[data-baseweb="select"] {
+        background-color: #ffffff !important;
+        border: 1px solid rgba(15, 23, 42, 0.1) !important;
+        border-radius: 8px;
+    }
+    div[data-baseweb="select"] > div {
+        background-color: transparent !important;
+        color: #0f172a !important;
+    }
+    div[data-baseweb="popover"] {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        border: 1px solid rgba(15, 23, 42, 0.1) !important;
+    }
+    div[data-baseweb="popover"] * {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+    }
+    div[data-baseweb="popover"] li:hover {
+        background-color: #f1f5f9 !important;
+    }
+    button[data-testid="baseButton-secondary"] {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        border: 1px solid rgba(15, 23, 42, 0.1) !important;
+    }
+    button[data-testid="baseButton-secondary"]:hover {
+        background-color: #f1f5f9 !important;
+        border-color: #2563eb !important;
+    }
+    button[data-testid="baseButton-primary"] {
+        background-color: #2563eb !important;
+        color: #ffffff !important;
+    }
+    button[data-baseweb="tab"] {
+        color: #64748b !important;
+    }
+    button[data-baseweb="tab"][aria-selected="true"] {
+        color: #2563eb !important;
+        border-bottom-color: #2563eb !important;
+    }
+    div[data-testid="stExpander"] {
+        background-color: #ffffff !important;
+        border: 1px solid rgba(15, 23, 42, 0.08) !important;
+    }
+    .kpi-card {
+        background: rgba(15, 23, 42, 0.03) !important;
+        border: 1px solid rgba(15, 23, 42, 0.08) !important;
+        color: #0f172a !important;
+    }
+    .kpi-title { color: #64748b !important; }
+    .kpi-value { color: #0f172a !important; }
+"""
+
 if not st.session_state["authenticated"]:
-    st.markdown("""
+    st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
-    html, body, [class*="css"] {
+    html, body, [class*="css"] {{
         font-family: 'Plus Jakarta Sans', sans-serif;
-    }
-    .login-box {
+    }}
+    .login-box {{
         max-width: 480px;
         margin: 60px auto 20px auto;
         padding: 2.5rem;
@@ -85,19 +265,26 @@ if not st.session_state["authenticated"]:
         border-radius: 20px;
         box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
         text-align: center;
-    }
-    .login-title {
+    }}
+    .login-title {{
         font-size: 1.8rem;
         font-weight: 700;
         margin-bottom: 0.2rem;
-    }
-    .login-subtitle {
+    }}
+    .login-subtitle {{
         font-size: 0.85rem;
         color: #888888;
         margin-bottom: 1.5rem;
-    }
+    }}
+    @media (prefers-color-scheme: dark) {{
+        {DARK_THEME_CSS}
+    }}
+    @media (prefers-color-scheme: light) {{
+        {LIGHT_THEME_CSS}
+    }}
     </style>
     """, unsafe_allow_html=True)
+
     
     st.markdown("""
     <div class="login-box">
@@ -277,45 +464,19 @@ theme_option = st.sidebar.selectbox(
 # Injected CSS based on Theme
 theme_css = ""
 if theme_option == "Escuro Premium":
-    theme_css = """
-    :root {
-        --primary-color: #3b82f6;
-        --background-color: #0b0f19;
-        --secondary-background-color: #111827;
-        --text-color: #f3f4f6;
-    }
-    .stApp {
-        background-color: #0b0f19 !important;
-        color: #f3f4f6 !important;
-    }
-    .kpi-card {
-        background: rgba(255, 255, 255, 0.03) !important;
-        border: 1px solid rgba(255, 255, 255, 0.08) !important;
-        color: #f3f4f6 !important;
-    }
-    .kpi-title { color: #9ca3af !important; }
-    .kpi-value { color: #f3f4f6 !important; }
-    """
+    theme_css = DARK_THEME_CSS
 elif theme_option == "Claro Elegante":
-    theme_css = """
-    :root {
-        --primary-color: #2563eb;
-        --background-color: #f8fafc;
-        --secondary-background-color: #f1f5f9;
-        --text-color: #0f172a;
-    }
-    .stApp {
-        background-color: #f8fafc !important;
-        color: #0f172a !important;
-    }
-    .kpi-card {
-        background: rgba(15, 23, 42, 0.03) !important;
-        border: 1px solid rgba(15, 23, 42, 0.08) !important;
-        color: #0f172a !important;
-    }
-    .kpi-title { color: #64748b !important; }
-    .kpi-value { color: #0f172a !important; }
+    theme_css = LIGHT_THEME_CSS
+else:  # Padrão do Dispositivo
+    theme_css = f"""
+    @media (prefers-color-scheme: dark) {{
+        {DARK_THEME_CSS}
+    }}
+    @media (prefers-color-scheme: light) {{
+        {LIGHT_THEME_CSS}
+    }}
     """
+
 
 st.markdown(f"""
 <style>
