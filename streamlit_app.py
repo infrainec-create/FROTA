@@ -85,7 +85,7 @@ def secret(name: str, default: Any = None) -> Any:
 
 
 @st.cache_resource
-def repository() -> DriveRepository | LocalJsonRepository:
+def get_repository() -> DriveRepository | LocalJsonRepository:
     account = secret("gcp_service_account")
     spreadsheet_id = secret("google_sheet_id")
     if not account or not spreadsheet_id:
@@ -94,7 +94,7 @@ def repository() -> DriveRepository | LocalJsonRepository:
 
 
 def rows(table: str) -> list[dict[str, Any]]:
-    return repository().list(table)
+    return get_repository().list(table)
 
 
 def as_number(value: Any) -> float:
@@ -119,7 +119,7 @@ def vehicle_odometer(vehicle_id: str, fuel: list[dict[str, Any]], maintenance: l
     return max(values, default=0.0)
 
 
-repo = repository()
+repo = get_repository()
 
 vehicles, drivers, maintenance, fuel, checkins, fines = (rows(name) for name in ("vehicles", "drivers", "maintenance", "fuel", "checkins", "fines"))
 
