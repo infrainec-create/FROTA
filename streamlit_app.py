@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import pandas as pd
@@ -12,7 +12,75 @@ from maintenance_ai import analyze_maintenance
 
 st.set_page_config(page_title="FrotaControl Pro", page_icon="🚚", layout="wide")
 
-# Theme Selection in Sidebar
+
+def secret(name: str, default: Any = None) -> Any:
+    return st.secrets[name] if name in st.secrets else default
+
+
+# 🚪 Simple Authentication Gate
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if not st.session_state["authenticated"]:
+    st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+    html, body, [class*="css"] {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .login-box {
+        max-width: 420px;
+        margin: 120px auto;
+        padding: 2.5rem;
+        background: rgba(128, 128, 128, 0.05);
+        border: 1px solid rgba(128, 128, 128, 0.15);
+        border-radius: 20px;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+        text-align: center;
+    }
+    .login-title {
+        font-size: 1.8rem;
+        font-weight: 700;
+        margin-bottom: 0.2rem;
+    }
+    .login-subtitle {
+        font-size: 0.85rem;
+        color: #888888;
+        margin-bottom: 2rem;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div class="login-box">
+        <div class="login-title">🚚 FrotaControl Pro</div>
+        <div class="login-subtitle">Sistema Gerencial de Frotas</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    with st.container():
+        col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
+        with col_l2:
+            password = st.text_input("Senha de Acesso", type="password", key="login_pass")
+            if st.button("Entrar no Painel", type="primary", use_container_width=True):
+                correct_pass = secret("ACCESS_PASSWORD", "admin123")
+                if password == correct_pass:
+                    st.session_state["authenticated"] = True
+                    st.rerun()
+                else:
+                    st.error("Senha de acesso incorreta. Tente novamente.")
+    st.stop()
+
+
+# Sidebar Logout Button and Theme Selector
+st.sidebar.markdown("### 👤 Usuário Logado")
+st.sidebar.caption("Administrador")
+if st.sidebar.button("🚪 Sair do Sistema", use_container_width=True):
+    st.session_state["authenticated"] = False
+    st.rerun()
+
+st.sidebar.divider()
+
 theme_option = st.sidebar.selectbox(
     "🌓 Tema da Interface",
     ["Padrão do Dispositivo", "Escuro Premium", "Claro Elegante"],
@@ -128,10 +196,6 @@ html, body, [class*="css"] {{
 """, unsafe_allow_html=True)
 
 
-def secret(name: str, default: Any = None) -> Any:
-    return st.secrets[name] if name in st.secrets else default
-
-
 @st.cache_resource
 def get_repository() -> DriveRepository | LocalJsonRepository:
     account = secret("gcp_service_account")
@@ -182,6 +246,15 @@ def vehicle_odometer(vehicle_id: str, fuel: list[dict[str, Any]], maintenance: l
 
 repo = get_repository()
 
+
+# 📁 Audit Logger Helper
+def log_action(action: str, details: str):
+    try:
+        repo.add("audit_log", {"action": action, "details": details})
+    except Exception:
+        pass
+
+
 vehicles, drivers, maintenance, fuel, checkins, fines = (rows(name) for name in ("vehicles", "drivers", "maintenance", "fuel", "checkins", "fines"))
 
 st.title("🚚 FrotaControl Pro")
@@ -190,8 +263,8 @@ st.caption("Gestão avançada de frotas com persistência flexível (Google Shee
 if not (secret("gcp_service_account") and secret("google_sheet_id")):
     st.warning("⚠️ Executando com banco de dados local (`local_db.json`). Para salvar os dados no Google Drive, configure o arquivo `.streamlit/secrets.toml`.")
 
-tab_dashboard, tab_vehicles, tab_operations, tab_maintenance, tab_reports, tab_ai = st.tabs([
-    "📊 Painel Geral", "👥 Veículos e Motoristas", "⚡ Operações Rápidas", "🔧 Manutenção", "📑 Relatórios & Filtros", "🤖 Analista IA"
+tab_dashboard, tab_vehicles, tab_operations, tab_maintenance, tab_fines, tab_reports, tab_logs, tab_ai = st.tabs([
+    "📊 Painel Geral", "👥 Veículos e Motoristas", "⚡ Operações Rápidas", "🔧 Manutenção", "🚨 Multas & Infrações", "📑 Relatórios & Filtros", "📁 Auditoria", "🤖 Analista IA"
 ])
 
 with tab_dashboard:
@@ -201,7 +274,8 @@ with tab_dashboard:
     in_maintenance = sum(v.get("status") == "Manutenção" for v in vehicles)
     total_maint = sum(as_number(m.get("cost")) for m in maintenance)
     total_fuel = sum(as_number(f.get("cost")) for f in fuel)
-    total_cost = total_maint + total_fuel
+    total_fines = sum(as_number(fi.get("amount")) for fi in fines)
+    total_cost = total_maint + total_fuel + total_fines
     
     col_a, col_b, col_c, col_d = st.columns(4)
     with col_a:
@@ -233,22 +307,106 @@ with tab_dashboard:
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("### 🔔 Alertas e Notificações de Manutenção")
+    st.markdown("### 🔔 Alertas e Notificações (CNH, IPVA, Seguro e Manutenção)")
     alerts = []
+    today = date.today()
+    in_30_days = today + timedelta(days=30)
+    
+    # Vehicle Expiration & Maintenance Alerts
     for vehicle in vehicles:
         current = vehicle_odometer(vehicle["id"], fuel, maintenance, checkins)
         history = [as_number(m.get("odometer")) for m in maintenance if m.get("vehicle_id") == vehicle["id"]]
         if current >= 10000 and (not history or current - max(history) >= 10000):
-            alerts.append(f"**{vehicle_label(vehicle)}**: revisão preventiva recomendada (odômetro atual: **{current:,.0f} km**).")
+            alerts.append(f"🔧 **Manutenção Preventiva**: {vehicle_label(vehicle)} necessita de revisão (odômetro atual: **{current:,.0f} km**).")
+        
+        # IPVA Alert
+        ipva_str = vehicle.get("ipva_expiry")
+        if ipva_str:
+            try:
+                ipva_dt = date.fromisoformat(ipva_str)
+                if ipva_dt <= today:
+                    alerts.append(f"🔴 **IPVA Vencido**: O IPVA do veículo **{vehicle_label(vehicle)}** venceu em {ipva_dt.strftime('%d/%m/%Y')}!")
+                elif ipva_dt <= in_30_days:
+                    alerts.append(f"⚠️ **IPVA Próximo do Vencimento**: O IPVA do veículo **{vehicle_label(vehicle)}** vence em {ipva_dt.strftime('%d/%m/%Y')}.")
+            except ValueError:
+                pass
+                
+        # Seguro Alert
+        ins_str = vehicle.get("insurance_expiry")
+        if ins_str:
+            try:
+                ins_dt = date.fromisoformat(ins_str)
+                if ins_dt <= today:
+                    alerts.append(f"🔴 **Seguro Vencido**: O seguro do veículo **{vehicle_label(vehicle)}** venceu em {ins_dt.strftime('%d/%m/%Y')}!")
+                elif ins_dt <= in_30_days:
+                    alerts.append(f"⚠️ **Seguro Próximo do Vencimento**: O seguro do veículo **{vehicle_label(vehicle)}** vence em {ins_dt.strftime('%d/%m/%Y')}.")
+            except ValueError:
+                pass
+
+    # Driver CNH Alerts
+    for driver in drivers:
+        expiry_str = driver.get("license_expiry")
+        if expiry_str:
+            try:
+                exp_dt = date.fromisoformat(expiry_str)
+                if exp_dt <= today:
+                    alerts.append(f"🔴 **CNH Vencida**: A CNH de **{driver['name']}** venceu em {exp_dt.strftime('%d/%m/%Y')}!")
+                elif exp_dt <= in_30_days:
+                    alerts.append(f"⚠️ **CNH Próxima do Vencimento**: A CNH de **{driver['name']}** vence em {exp_dt.strftime('%d/%m/%Y')}.")
+            except ValueError:
+                pass
     
     if alerts:
         for alert in alerts:
             st.markdown(f'<div class="alert-card-warning">{alert}</div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="alert-card-success">✔️ Todos os veículos estão com a manutenção preventiva em dia!</div>', unsafe_allow_html=True)
+        st.markdown('<div class="alert-card-success">✔️ Todos os veículos e habilitações estão com a documentação e manutenção preventivas em dia!</div>', unsafe_allow_html=True)
         
     st.divider()
     
+    # 📊 EFFICIENCY SUMMARY TABLE
+    st.markdown("### 📊 Eficiência & Custos por Veículo")
+    metrics_rows = []
+    for v in vehicles:
+        v_id = v["id"]
+        v_label = vehicle_label(v)
+        
+        v_fuel = [f for f in fuel if f.get("vehicle_id") == v_id]
+        v_maint = [m for m in maintenance if m.get("vehicle_id") == v_id]
+        v_checkins = [c for c in checkins if c.get("vehicle_id") == v_id]
+        
+        odos = []
+        for item in v_fuel + v_maint:
+            odos.append(as_number(item.get("odometer")))
+        for item in v_checkins:
+            odos.extend([as_number(item.get("odometer_start")), as_number(item.get("odometer_end"))])
+            
+        km_run = max(odos) - min(odos) if len(odos) >= 2 else 0.0
+        
+        fuel_cost = sum(as_number(f.get("cost")) for f in v_fuel)
+        maint_cost = sum(as_number(m.get("cost")) for m in v_maint)
+        total_v_cost = fuel_cost + maint_cost
+        
+        liters = sum(as_number(f.get("liters")) for f in v_fuel)
+        kml = km_run / liters if liters > 0 else 0.0
+        cost_km = total_v_cost / km_run if km_run > 0 else 0.0
+        
+        metrics_rows.append({
+            "Veículo": v_label,
+            "KM Rodados": f"{km_run:,.0f} km",
+            "Combustível": f"{liters:,.1f} L",
+            "Média Consumo": f"{kml:.2f} km/L" if kml > 0 else "-",
+            "Custo Total": f"R$ {total_v_cost:,.2f}",
+            "Custo por KM": f"R$ {cost_km:.2f}/km" if cost_km > 0 else "-"
+        })
+        
+    if metrics_rows:
+        st.dataframe(pd.DataFrame(metrics_rows), use_container_width=True, hide_index=True)
+    else:
+        st.info("Dados insuficientes para calcular métricas de eficiência.")
+
+    st.divider()
+
     # CHARTS SECTION
     st.subheader("Gráficos Analíticos")
     chart_col1, chart_col2 = st.columns(2)
@@ -303,7 +461,7 @@ with tab_vehicles:
         with col_v1:
             st.markdown("##### Veículos Cadastrados")
             if vehicles:
-                st.dataframe(pd.DataFrame(vehicles)[["name", "plate", "year", "status"]], use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(vehicles)[["name", "plate", "year", "status", "ipva_expiry", "insurance_expiry"]], use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum veículo cadastrado.")
         with col_v2:
@@ -322,13 +480,23 @@ with tab_vehicles:
                 plate = st.text_input("Placa").upper().strip()
                 year = st.number_input("Ano", 1900, 2100, value=date.today().year)
                 status = st.selectbox("Situação", ["Disponível", "Em uso", "Manutenção", "Inativo"])
+                ipva_exp = st.date_input("Vencimento do IPVA (Opcional)", value=None)
+                ins_exp = st.date_input("Vencimento do Seguro (Opcional)", value=None)
                 if st.form_submit_button("Salvar veículo"):
                     if not name or not plate:
                         st.error("Informe nome e placa.")
                     elif any(v.get("plate") == plate for v in vehicles):
                         st.error("Esta placa já está cadastrada.")
                     else:
-                        repo.add("vehicles", {"name": name.strip(), "plate": plate, "year": year, "status": status})
+                        repo.add("vehicles", {
+                            "name": name.strip(),
+                            "plate": plate,
+                            "year": year,
+                            "status": status,
+                            "ipva_expiry": ipva_exp.isoformat() if ipva_exp else "",
+                            "insurance_expiry": ins_exp.isoformat() if ins_exp else ""
+                        })
+                        log_action("Cadastro de Veículo", f"Veículo {name} ({plate}) cadastrado.")
                         st.cache_data.clear()
                         st.success("Veículo salvo com sucesso!")
                         st.rerun()
@@ -345,6 +513,7 @@ with tab_vehicles:
                         st.error("Informe nome e CNH.")
                     else:
                         repo.add("drivers", {"name": d_name.strip(), "phone": phone.strip(), "license": license_number.strip(), "license_expiry": expiry.isoformat() if expiry else "", "status": "Ativo"})
+                        log_action("Cadastro de Motorista", f"Motorista {d_name} cadastrado.")
                         st.cache_data.clear()
                         st.success("Motorista salvo com sucesso!")
                         st.rerun()
@@ -357,13 +526,27 @@ with tab_vehicles:
             selected_v_edit = st.selectbox("Selecione o veículo", [None] + list(by_label), key="edit_v_select")
             if selected_v_edit:
                 v_data = by_label[selected_v_edit]
+                
+                ipva_curr = date.fromisoformat(v_data["ipva_expiry"]) if v_data.get("ipva_expiry") else None
+                ins_curr = date.fromisoformat(v_data["insurance_expiry"]) if v_data.get("insurance_expiry") else None
+                
                 with st.form("form_edit_vehicle"):
                     edit_name = st.text_input("Modelo / nome", value=v_data.get("name", ""))
                     edit_plate = st.text_input("Placa", value=v_data.get("plate", "")).upper().strip()
                     edit_year = st.number_input("Ano", 1900, 2100, value=int(as_number(v_data.get("year")) or date.today().year))
                     edit_status = st.selectbox("Situação", ["Disponível", "Em uso", "Manutenção", "Inativo"], index=["Disponível", "Em uso", "Manutenção", "Inativo"].index(v_data.get("status", "Disponível")))
+                    edit_ipva = st.date_input("Vencimento do IPVA", value=ipva_curr)
+                    edit_ins = st.date_input("Vencimento do Seguro", value=ins_curr)
                     if st.form_submit_button("Salvar Alterações"):
-                        repo.update("vehicles", v_data["id"], {"name": edit_name.strip(), "plate": edit_plate, "year": edit_year, "status": edit_status})
+                        repo.update("vehicles", v_data["id"], {
+                            "name": edit_name.strip(),
+                            "plate": edit_plate,
+                            "year": edit_year,
+                            "status": edit_status,
+                            "ipva_expiry": edit_ipva.isoformat() if edit_ipva else "",
+                            "insurance_expiry": edit_ins.isoformat() if edit_ins else ""
+                        })
+                        log_action("Edição de Veículo", f"Veículo {edit_name} ({edit_plate}) atualizado.")
                         st.cache_data.clear()
                         st.success("Veículo atualizado!")
                         st.rerun()
@@ -394,6 +577,7 @@ with tab_vehicles:
                             "license_expiry": edit_d_expiry.isoformat() if edit_d_expiry else "",
                             "status": edit_d_status
                         })
+                        log_action("Edição de Motorista", f"Motorista {edit_d_name} atualizado.")
                         st.cache_data.clear()
                         st.success("Motorista atualizado!")
                         st.rerun()
@@ -409,6 +593,7 @@ with tab_vehicles:
                 confirm_v = st.checkbox("Confirmo a exclusão definitiva do veículo.", key="confirm_v_del")
                 if st.button("Excluir Veículo", type="primary", disabled=not confirm_v):
                     repo.delete("vehicles", v_data["id"])
+                    log_action("Exclusão de Veículo", f"Veículo {selected_v_del} excluído.")
                     st.cache_data.clear()
                     st.success("Veículo excluído com sucesso!")
                     st.rerun()
@@ -422,6 +607,7 @@ with tab_vehicles:
                 confirm_d = st.checkbox("Confirmo a exclusão definitiva do motorista.", key="confirm_d_del")
                 if st.button("Excluir Motorista", type="primary", disabled=not confirm_d):
                     repo.delete("drivers", d_data["id"])
+                    log_action("Exclusão de Motorista", f"Motorista {selected_d_del} excluído.")
                     st.cache_data.clear()
                     st.success("Motorista excluído com sucesso!")
                     st.rerun()
@@ -468,6 +654,7 @@ with tab_operations:
                         st.error("O odômetro não pode ser menor que o último registro do veículo.")
                     else:
                         repo.add("fuel", {"vehicle_id": vehicle["id"], "liters": liters, "cost": cost, "fuel_date": fuel_date, "odometer": odometer})
+                        log_action("Registro de Abastecimento", f"Abastecimento de {liters}L para {selected}.")
                         st.cache_data.clear()
                         st.success("Abastecimento registrado com sucesso!")
                         st.rerun()
@@ -504,6 +691,7 @@ with tab_operations:
                                 "notes": notes.strip()
                             })
                             repo.update("vehicles", vehicle["id"], {"status": "Em uso"})
+                            log_action("Abertura de Check-in", f"Veículo {selected_vehicle} retirado por {selected_driver}.")
                             st.cache_data.clear()
                             st.success("Check-in aberto!")
                             st.rerun()
@@ -530,6 +718,7 @@ with tab_operations:
                         else:
                             repo.update("checkins", checkin["id"], {"checkout_at": checkout_date, "odometer_end": end})
                             repo.update("vehicles", checkin["vehicle_id"], {"status": "Disponível"})
+                            log_action("Fechamento de Check-in", f"Check-in finalizado para veículo ID {checkin['vehicle_id']}.")
                             st.cache_data.clear()
                             st.success("Check-in finalizado!")
                             st.rerun()
@@ -567,6 +756,7 @@ with tab_maintenance:
                             "maint_date": maint_date,
                             "odometer": odometer
                         })
+                        log_action("Registro de Manutenção", f"Serviço {maint_type} para {selected}. Custo: R$ {cost}.")
                         st.cache_data.clear()
                         st.success("Manutenção registrada com sucesso!")
                         st.rerun()
@@ -595,16 +785,114 @@ with tab_maintenance:
         else:
             st.info("Nenhuma manutenção registrada até o momento.")
 
+with tab_fines:
+    st.subheader("🚨 Controle de Multas & Infrações de Trânsito")
+    
+    fine_tab1, fine_tab2, fine_tab3 = st.tabs([
+        "🔍 Visualizar Multas", "➕ Registrar Multa", "✏️ Gestão de Multas"
+    ])
+    
+    with fine_tab1:
+        if fines:
+            df_fines_list = pd.DataFrame(fines)
+            drivers_dict = {d["id"]: d["name"] for d in drivers}
+            df_fines_list["Motorista"] = df_fines_list["driver_id"].map(drivers_dict).fillna("Motorista Excluído")
+            
+            df_fines_disp = df_fines_list.copy()
+            df_fines_disp["amount"] = df_fines_disp["amount"].map(lambda x: f"R$ {as_number(x):,.2f}")
+            
+            st.dataframe(
+                df_fines_disp[["fine_date", "Motorista", "description", "amount", "status"]].rename(columns={
+                    "fine_date": "Data Infração",
+                    "description": "Descrição / Infração",
+                    "amount": "Valor",
+                    "status": "Situação"
+                }), use_container_width=True, hide_index=True
+            )
+        else:
+            st.info("Nenhuma multa registrada.")
+            
+    with fine_tab2:
+        st.markdown("##### Cadastrar Nova Infração")
+        active_drivers = [driver for driver in drivers if driver.get("status") == "Ativo"]
+        if not active_drivers:
+            st.info("Cadastre motoristas ativos primeiro.")
+        else:
+            driver_options = {driver["name"]: driver for driver in active_drivers}
+            with st.form("new_fine_form", clear_on_submit=True):
+                selected_driver = st.selectbox("Motorista Autuado", list(driver_options))
+                fine_desc = st.text_area("Descrição da Infração")
+                fine_amount = st.number_input("Valor da Autuação (R$)", min_value=0.01, step=1.0)
+                fine_dt = st.date_input("Data da Infração", value=date.today())
+                fine_status = st.selectbox("Situação da Multa", ["Pendente", "Pago", "Contestada"])
+                if st.form_submit_button("Salvar Multa"):
+                    repo.add("fines", {
+                        "driver_id": driver_options[selected_driver]["id"],
+                        "description": fine_desc.strip(),
+                        "amount": fine_amount,
+                        "fine_date": fine_dt,
+                        "status": fine_status
+                    })
+                    log_action("Registro de Multa", f"Multa de R$ {fine_amount} para motorista {selected_driver}.")
+                    st.cache_data.clear()
+                    st.success("Multa registrada com sucesso!")
+                    st.rerun()
+
+    with fine_tab3:
+        col_fe1, col_fe2 = st.columns(2)
+        with col_fe1:
+            st.markdown("##### Editar Multa")
+            fines_map = {f"{f.get('fine_date')} · {f.get('description')[:30]}... · R$ {as_number(f.get('amount')):.2f}": f for f in fines}
+            selected_fine_edit = st.selectbox("Selecione a Multa para editar", [None] + list(fines_map), key="edit_f_select")
+            if selected_fine_edit:
+                fine_data = fines_map[selected_fine_edit]
+                d_curr = next((d for d in drivers if d["id"] == fine_data["driver_id"]), None)
+                d_name_curr = d_curr["name"] if d_curr else ""
+                driver_options = {driver["name"]: driver for driver in drivers}
+                
+                with st.form("form_edit_fine"):
+                    edit_d = st.selectbox("Motorista Autuado", list(driver_options), index=list(driver_options).index(d_name_curr) if d_name_curr in driver_options else 0)
+                    edit_desc = st.text_area("Descrição da Infração", value=fine_data.get("description", ""))
+                    edit_amount = st.number_input("Valor (R$)", min_value=0.01, step=1.0, value=as_number(fine_data.get("amount")))
+                    edit_date = st.date_input("Data da Infração", value=date.fromisoformat(fine_data["fine_date"]) if fine_data.get("fine_date") else date.today())
+                    edit_status = st.selectbox("Situação da Multa", ["Pendente", "Pago", "Contestada"], index=["Pendente", "Pago", "Contestada"].index(fine_data.get("status", "Pendente")))
+                    if st.form_submit_button("Salvar Alterações"):
+                        repo.update("fines", fine_data["id"], {
+                            "driver_id": driver_options[edit_d]["id"],
+                            "description": edit_desc.strip(),
+                            "amount": edit_amount,
+                            "fine_date": edit_date,
+                            "status": edit_status
+                        })
+                        log_action("Edição de Multa", f"Multa ID {fine_data['id']} atualizada.")
+                        st.cache_data.clear()
+                        st.success("Multa atualizada com sucesso!")
+                        st.rerun()
+                        
+        with col_fe2:
+            st.markdown("##### Excluir Multa")
+            selected_fine_del = st.selectbox("Selecione a Multa para excluir", [None] + list(fines_map), key="del_f_select")
+            if selected_fine_del:
+                fine_data = fines_map[selected_fine_del]
+                st.error(f"⚠️ Atenção: Isso excluirá permanentemente o registro desta multa.")
+                confirm_f = st.checkbox("Confirmo a exclusão definitiva desta multa.", key="confirm_f_del")
+                if st.button("Excluir Multa", type="primary", disabled=not confirm_f):
+                    repo.delete("fines", fine_data["id"])
+                    log_action("Exclusão de Multa", f"Multa ID {fine_data['id']} excluída.")
+                    st.cache_data.clear()
+                    st.success("Multa excluída com sucesso!")
+                    st.rerun()
+
 with tab_reports:
     st.subheader("📑 Central de Relatórios com Filtros Dinâmicos")
     
-    report_name = st.selectbox("Selecione a tabela de dados", ["vehicles", "maintenance", "fuel", "drivers", "checkins"])
+    report_name = st.selectbox("Selecione a tabela de dados", ["vehicles", "maintenance", "fuel", "drivers", "checkins", "fines"])
     data = rows(report_name)
     
     if data:
         df_report = pd.DataFrame(data)
         
-        st.markdown("##### 🔍 Filtrar Dados")
+        st.markdown("##### 🔍 Filtrar Relatório")
         filter_col1, filter_col2, filter_col3 = st.columns(3)
         
         filtered_df = df_report.copy()
@@ -617,7 +905,7 @@ with tab_reports:
                 if v_filter != "Todos":
                     filtered_df = filtered_df[filtered_df["Nome Veículo"] == v_filter]
                     
-        date_col = next((c for c in ["maint_date", "fuel_date", "checkin_at", "created_at"] if c in df_report.columns), None)
+        date_col = next((c for c in ["maint_date", "fuel_date", "checkin_at", "fine_date", "created_at"] if c in df_report.columns), None)
         if date_col:
             with filter_col2:
                 df_report[date_col] = pd.to_datetime(df_report[date_col], errors='coerce')
@@ -662,6 +950,27 @@ with tab_reports:
         )
     else:
         st.info("Ainda não há dados cadastrados nessa categoria para gerar relatórios.")
+
+with tab_logs:
+    st.subheader("📁 Histórico de Auditoria do Sistema")
+    st.caption("Logs das ações de cadastro, edição, exclusão e operação de trânsito em ordem cronológica.")
+    
+    logs_data = rows("audit_log")
+    if logs_data:
+        df_logs = pd.DataFrame(logs_data)
+        if "created_at" in df_logs.columns:
+            df_logs["created_at"] = pd.to_datetime(df_logs["created_at"])
+            df_logs = df_logs.sort_values(by="created_at", ascending=False)
+            df_logs["created_at"] = df_logs["created_at"].dt.strftime("%Y-%m-%d %H:%M:%S")
+        st.dataframe(
+            df_logs[["created_at", "action", "details"]].rename(columns={
+                "created_at": "Data/Hora",
+                "action": "Ação Realizada",
+                "details": "Detalhes"
+            }), use_container_width=True, hide_index=True
+        )
+    else:
+        st.info("Nenhum registro de auditoria disponível.")
 
 with tab_ai:
     st.subheader("🤖 Analista de Manutenção Inteligente")

@@ -10,12 +10,13 @@ from google.oauth2.service_account import Credentials
 
 
 TABLES: dict[str, list[str]] = {
-    "vehicles": ["id", "name", "plate", "year", "status", "created_at"],
+    "vehicles": ["id", "name", "plate", "year", "status", "ipva_expiry", "insurance_expiry", "created_at"],
     "drivers": ["id", "name", "phone", "license", "license_expiry", "status", "created_at"],
     "maintenance": ["id", "vehicle_id", "description", "cost", "maint_date", "odometer", "maint_type", "created_at"],
     "fuel": ["id", "vehicle_id", "liters", "cost", "fuel_date", "odometer", "created_at"],
     "checkins": ["id", "vehicle_id", "driver_id", "checkin_at", "checkout_at", "odometer_start", "odometer_end", "notes", "created_at"],
     "fines": ["id", "driver_id", "description", "amount", "fine_date", "status", "created_at"],
+    "audit_log": ["id", "action", "details", "created_at"],
 }
 
 
