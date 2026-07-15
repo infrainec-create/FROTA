@@ -1,12 +1,15 @@
-"""Persistência do FrotaControl em uma planilha Google Sheets no Google Drive."""
+"""Persistência do FrotaControl em um banco de dados SQLite sincronizado no Google Drive."""
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+import os
+import json
+import sqlite3
 from typing import Any
 from uuid import uuid4
 
-import gspread
 from google.oauth2.service_account import Credentials
+from google.auth.transport.requests import AuthorizedSession
 
 
 TABLES: dict[str, list[str]] = {
@@ -21,142 +24,173 @@ TABLES: dict[str, list[str]] = {
 
 
 class DriveRepository:
-    """Pequeno repositório para uma planilha privada compartilhada com a conta de serviço."""
+    """Repositório de dados que utiliza um arquivo SQLite local e sincroniza no Google Drive."""
 
-    def __init__(self, service_account: dict[str, Any], spreadsheet_id: str):
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive.file",
-        ]
-        credentials = Credentials.from_service_account_info(service_account, scopes=scopes)
-        self.sheet = gspread.authorize(credentials).open_by_key(spreadsheet_id)
+    def __init__(self, service_account: dict[str, Any] | None, google_sheet_id: str | None):
+        self.service_account = service_account
+        self.google_sheet_id = google_sheet_id
+        self.db_path = "frota_drive.db"
+        self.drive_file_id = None
+        self.parent_folder_id = None
+
+        # 1. Tenta baixar o arquivo do Drive se as credenciais existirem
+        self._download_from_drive()
+
+        # 2. Garante que as tabelas SQL estão criadas localmente
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:
-        existing = {worksheet.title: worksheet for worksheet in self.sheet.worksheets()}
-        for table, headers in TABLES.items():
-            worksheet = existing.get(table)
-            if worksheet is None:
-                worksheet = self.sheet.add_worksheet(title=table, rows=1000, cols=len(headers))
-            if worksheet.row_values(1) != headers:
-                worksheet.update([headers], "A1")
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        for table, columns in TABLES.items():
+            cols_def = []
+            for col in columns:
+                if col == "id":
+                    cols_def.append("id TEXT PRIMARY KEY")
+                else:
+                    cols_def.append(f"{col} TEXT")
+            cursor.execute(f"CREATE TABLE IF NOT EXISTS {table} ({', '.join(cols_def)})")
+        conn.commit()
+        conn.close()
 
-    def list(self, table: str) -> list[dict[str, Any]]:
-        self._validate_table(table)
-        return [row for row in self.sheet.worksheet(table).get_all_records() if row.get("id")]
+    def _get_session(self) -> AuthorizedSession:
+        scopes = ["https://www.googleapis.com/auth/drive"]
+        credentials = Credentials.from_service_account_info(self.service_account, scopes=scopes)
+        return AuthorizedSession(credentials)
 
-    def add(self, table: str, values: dict[str, Any]) -> dict[str, Any]:
-        self._validate_table(table)
-        record = {
-            "id": str(uuid4()),
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            **values,
-        }
-        headers = TABLES[table]
-        self.sheet.worksheet(table).append_row([self._serialize(record.get(header, "")) for header in headers])
-        return record
+    def _download_from_drive(self) -> None:
+        if not self.service_account or not self.google_sheet_id:
+            return
 
-    def update(self, table: str, record_id: str, values: dict[str, Any]) -> None:
-        self._validate_table(table)
-        worksheet = self.sheet.worksheet(table)
-        records = worksheet.get_all_records()
-        for index, record in enumerate(records, start=2):
-            if str(record.get("id")) == str(record_id):
-                record.update(values)
-                worksheet.update([[self._serialize(record.get(header, "")) for header in TABLES[table]]], f"A{index}")
-                return
-        raise KeyError(f"Registro {record_id} não encontrado em {table}.")
-
-    def delete(self, table: str, record_id: str) -> None:
-        self._validate_table(table)
-        worksheet = self.sheet.worksheet(table)
-        records = worksheet.get_all_records()
-        for index, record in enumerate(records, start=2):
-            if str(record.get("id")) == str(record_id):
-                worksheet.delete_rows(index)
-                return
-        raise KeyError(f"Registro {record_id} não encontrado em {table}.")
-
-
-    @staticmethod
-    def _serialize(value: Any) -> str | int | float:
-        if value is None:
-            return ""
-        if isinstance(value, (date, datetime)):
-            return value.isoformat()
-        return value
-
-    @staticmethod
-    def _validate_table(table: str) -> None:
-        if table not in TABLES:
-            raise ValueError("Tabela inválida.")
-
-
-class LocalJsonRepository:
-    """Repositório local em arquivo JSON para testes sem credenciais do Google Drive."""
-
-    def __init__(self, filepath: str = "local_db.json"):
-        self.filepath = filepath
-        self._ensure_schema()
-
-    def _ensure_schema(self) -> None:
-        import os
-        import json
-        if not os.path.exists(self.filepath):
-            with open(self.filepath, "w", encoding="utf-8") as f:
-                json.dump({table: [] for table in TABLES}, f, indent=2)
-
-    def _load(self) -> dict[str, list[dict[str, Any]]]:
-        import json
         try:
-            with open(self.filepath, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {table: [] for table in TABLES}
+            session = self._get_session()
 
-    def _save(self, data: dict[str, list[dict[str, Any]]]) -> None:
-        import json
-        with open(self.filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+            # Obtém a pasta mãe da planilha configurada
+            res = session.get(f"https://www.googleapis.com/drive/v3/files/{self.google_sheet_id}", params={"fields": "parents"})
+            if res.status_code == 200:
+                parents = res.json().get("parents", [])
+                if parents:
+                    self.parent_folder_id = parents[0]
+
+            # Busca se o frota.db já existe
+            q = "name='frota.db' and trashed=false"
+            if self.parent_folder_id:
+                q += f" and '{self.parent_folder_id}' in parents"
+
+            search_res = session.get("https://www.googleapis.com/drive/v3/files", params={"q": q, "fields": "files(id)"})
+            files = search_res.json().get("files", [])
+            
+            if files:
+                self.drive_file_id = files[0]["id"]
+                # Baixa o conteúdo do arquivo
+                dl_res = session.get(f"https://www.googleapis.com/drive/v3/files/{self.drive_file_id}", params={"alt": "media"})
+                if dl_res.status_code == 200:
+                    with open(self.db_path, "wb") as f:
+                        f.write(dl_res.content)
+        except Exception as e:
+            print(f"Erro ao baixar do Drive: {e}", flush=True)
+
+    def _upload_to_drive(self) -> None:
+        if not self.service_account:
+            return
+
+        try:
+            session = self._get_session()
+
+            # Se não temos o ID do arquivo do Drive, tenta buscar novamente
+            if not self.drive_file_id:
+                q = "name='frota.db' and trashed=false"
+                if self.parent_folder_id:
+                    q += f" and '{self.parent_folder_id}' in parents"
+                
+                search_res = session.get("https://www.googleapis.com/drive/v3/files", params={"q": q, "fields": "files(id)"})
+                files = search_res.json().get("files", [])
+                if files:
+                    self.drive_file_id = files[0]["id"]
+
+            if self.drive_file_id:
+                # Atualiza o arquivo existente
+                with open(self.db_path, "rb") as f:
+                    session.patch(
+                        f"https://www.googleapis.com/upload/drive/v3/files/{self.drive_file_id}?uploadType=media",
+                        data=f.read(),
+                        headers={"Content-Type": "application/x-sqlite3"}
+                    )
+            else:
+                # Cria um novo arquivo
+                metadata = {"name": "frota.db"}
+                if self.parent_folder_id:
+                    metadata["parents"] = [self.parent_folder_id]
+
+                files = {
+                    "data": ("metadata", json.dumps(metadata), "application/json; charset=UTF-8"),
+                    "file": ("frota.db", open(self.db_path, "rb"), "application/x-sqlite3")
+                }
+                res = session.post("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", files=files)
+                if res.status_code == 200:
+                    self.drive_file_id = res.json().get("id")
+        except Exception as e:
+            print(f"Erro ao subir para o Drive: {e}", flush=True)
 
     def list(self, table: str) -> list[dict[str, Any]]:
         self._validate_table(table)
-        return self._load().get(table, [])
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT * FROM {table}")
+        rows = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return rows
 
     def add(self, table: str, values: dict[str, Any]) -> dict[str, Any]:
         self._validate_table(table)
-        data = self._load()
         record = {
             "id": str(uuid4()),
             "created_at": datetime.now(timezone.utc).isoformat(),
             **{k: self._serialize(v) for k, v in values.items()},
         }
-        data.setdefault(table, []).append(record)
-        self._save(data)
+        
+        headers = TABLES[table]
+        for h in headers:
+            if h not in record:
+                record[h] = ""
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        placeholders = ", ".join(["?"] * len(headers))
+        columns_str = ", ".join(headers)
+        values_list = [record[h] for h in headers]
+        
+        cursor.execute(f"INSERT INTO {table} ({columns_str}) VALUES ({placeholders})", values_list)
+        conn.commit()
+        conn.close()
+        
+        self._upload_to_drive()
         return record
 
     def update(self, table: str, record_id: str, values: dict[str, Any]) -> None:
         self._validate_table(table)
-        data = self._load()
-        records = data.get(table, [])
-        for record in records:
-            if str(record.get("id")) == str(record_id):
-                record.update({k: self._serialize(v) for k, v in values.items()})
-                self._save(data)
-                return
-        raise KeyError(f"Registro {record_id} não encontrado em {table}.")
+        serialized_values = {k: self._serialize(v) for k, v in values.items()}
+        set_clause = ", ".join([f"{k} = ?" for k in serialized_values.keys()])
+        bind_values = list(serialized_values.values()) + [str(record_id)]
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(f"UPDATE {table} SET {set_clause} WHERE id = ?", bind_values)
+        conn.commit()
+        conn.close()
+        
+        self._upload_to_drive()
 
     def delete(self, table: str, record_id: str) -> None:
         self._validate_table(table)
-        data = self._load()
-        records = data.get(table, [])
-        initial_len = len(records)
-        records = [r for r in records if str(r.get("id")) != str(record_id)]
-        if len(records) == initial_len:
-            raise KeyError(f"Registro {record_id} não encontrado em {table}.")
-        data[table] = records
-        self._save(data)
-
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(f"DELETE FROM {table} WHERE id = ?", (str(record_id),))
+        conn.commit()
+        conn.close()
+        
+        self._upload_to_drive()
 
     @staticmethod
     def _serialize(value: Any) -> str | int | float:
@@ -170,4 +204,3 @@ class LocalJsonRepository:
     def _validate_table(table: str) -> None:
         if table not in TABLES:
             raise ValueError("Tabela inválida.")
-

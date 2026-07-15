@@ -6,7 +6,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from drive_repository import DriveRepository, LocalJsonRepository
+from drive_repository import DriveRepository
 from maintenance_ai import analyze_maintenance
 
 
@@ -197,12 +197,13 @@ html, body, [class*="css"] {{
 
 
 @st.cache_resource
-def get_repository() -> DriveRepository | LocalJsonRepository:
+def get_repository() -> DriveRepository:
     account = secret("gcp_service_account")
     spreadsheet_id = secret("google_sheet_id")
-    if not account or not spreadsheet_id:
-        return LocalJsonRepository("local_db.json")
-    return DriveRepository(dict(account), str(spreadsheet_id))
+    return DriveRepository(
+        dict(account) if account else None,
+        str(spreadsheet_id) if spreadsheet_id else None
+    )
 
 
 # Performance caching: avoids calling Google sheets API on every single component interaction
