@@ -199,10 +199,10 @@ html, body, [class*="css"] {{
 @st.cache_resource
 def get_repository() -> DriveRepository:
     account = secret("gcp_service_account")
-    spreadsheet_id = secret("google_sheet_id")
+    folder_id = secret("google_drive_folder_id") or secret("google_sheet_id")
     return DriveRepository(
         dict(account) if account else None,
-        str(spreadsheet_id) if spreadsheet_id else None
+        str(folder_id) if folder_id else None
     )
 
 

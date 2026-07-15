@@ -26,12 +26,11 @@ TABLES: dict[str, list[str]] = {
 class DriveRepository:
     """Repositório de dados que utiliza um arquivo SQLite local e sincroniza no Google Drive."""
 
-    def __init__(self, service_account: dict[str, Any] | None, google_sheet_id: str | None):
+    def __init__(self, service_account: dict[str, Any] | None, google_drive_folder_id: str | None):
         self.service_account = service_account
-        self.google_sheet_id = google_sheet_id
+        self.google_drive_folder_id = google_drive_folder_id
         self.db_path = "frota_drive.db"
         self.drive_file_id = None
-        self.parent_folder_id = None
 
         # 1. Tenta baixar o arquivo do Drive se as credenciais existirem
         self._download_from_drive()
@@ -59,54 +58,43 @@ class DriveRepository:
         return AuthorizedSession(credentials)
 
     def _download_from_drive(self) -> None:
-        if not self.service_account or not self.google_sheet_id:
+        if not self.service_account or not self.google_drive_folder_id:
             return
 
         try:
             session = self._get_session()
 
-            # Obtém a pasta mãe da planilha configurada
-            res = session.get(f"https://www.googleapis.com/drive/v3/files/{self.google_sheet_id}", params={"fields": "parents"})
-            if res.status_code == 200:
-                parents = res.json().get("parents", [])
-                if parents:
-                    self.parent_folder_id = parents[0]
-
-            # Busca se o frota.db já existe
-            q = "name='frota.db' and trashed=false"
-            if self.parent_folder_id:
-                q += f" and '{self.parent_folder_id}' in parents"
-
+            # Busca se o frota.db já existe na pasta compartilhada do Drive
+            q = f"name='frota.db' and '{self.google_drive_folder_id}' in parents and trashed=false"
             search_res = session.get("https://www.googleapis.com/drive/v3/files", params={"q": q, "fields": "files(id)"})
-            files = search_res.json().get("files", [])
             
-            if files:
-                self.drive_file_id = files[0]["id"]
-                # Baixa o conteúdo do arquivo
-                dl_res = session.get(f"https://www.googleapis.com/drive/v3/files/{self.drive_file_id}", params={"alt": "media"})
-                if dl_res.status_code == 200:
-                    with open(self.db_path, "wb") as f:
-                        f.write(dl_res.content)
+            if search_res.status_code == 200:
+                files = search_res.json().get("files", [])
+                if files:
+                    self.drive_file_id = files[0]["id"]
+                    # Baixa o conteúdo do arquivo
+                    dl_res = session.get(f"https://www.googleapis.com/drive/v3/files/{self.drive_file_id}", params={"alt": "media"})
+                    if dl_res.status_code == 200:
+                        with open(self.db_path, "wb") as f:
+                            f.write(dl_res.content)
         except Exception as e:
             print(f"Erro ao baixar do Drive: {e}", flush=True)
 
     def _upload_to_drive(self) -> None:
-        if not self.service_account:
+        if not self.service_account or not self.google_drive_folder_id:
             return
 
         try:
             session = self._get_session()
 
-            # Se não temos o ID do arquivo do Drive, tenta buscar novamente
+            # Se não temos o ID do arquivo do Drive, tenta buscar novamente na pasta
             if not self.drive_file_id:
-                q = "name='frota.db' and trashed=false"
-                if self.parent_folder_id:
-                    q += f" and '{self.parent_folder_id}' in parents"
-                
+                q = f"name='frota.db' and '{self.google_drive_folder_id}' in parents and trashed=false"
                 search_res = session.get("https://www.googleapis.com/drive/v3/files", params={"q": q, "fields": "files(id)"})
-                files = search_res.json().get("files", [])
-                if files:
-                    self.drive_file_id = files[0]["id"]
+                if search_res.status_code == 200:
+                    files = search_res.json().get("files", [])
+                    if files:
+                        self.drive_file_id = files[0]["id"]
 
             if self.drive_file_id:
                 # Atualiza o arquivo existente
@@ -117,11 +105,12 @@ class DriveRepository:
                         headers={"Content-Type": "application/x-sqlite3"}
                     )
             else:
-                # Cria um novo arquivo
-                metadata = {"name": "frota.db"}
-                if self.parent_folder_id:
-                    metadata["parents"] = [self.parent_folder_id]
-
+                # Cria um novo arquivo dentro da pasta compartilhada do usuário
+                # (isso consome a cota de armazenamento do proprietário da pasta, não do Service Account)
+                metadata = {
+                    "name": "frota.db",
+                    "parents": [self.google_drive_folder_id]
+                }
                 files = {
                     "data": ("metadata", json.dumps(metadata), "application/json; charset=UTF-8"),
                     "file": ("frota.db", open(self.db_path, "rb"), "application/x-sqlite3")
