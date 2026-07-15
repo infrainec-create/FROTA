@@ -783,11 +783,67 @@ with tab_dashboard:
         else:
             st.info("Cadastre veículos para ver o gráfico de status.")
 
+    st.divider()
+    st.subheader("Evolução & Análise de Custos")
+    col_chart3, col_chart4 = st.columns(2)
+    
+    with col_chart3:
+        st.markdown("##### 📈 Evolução de Gastos Mensais Totais")
+        total_monthly_costs = {}
+        for m in filtered_maint:
+            cost_val = as_number(m.get("cost"))
+            d_str = m.get("maint_date") or m.get("created_at")
+            if d_str:
+                try:
+                    month_str = datetime.strptime(d_str[:10], "%Y-%m-%d").strftime("%Y-%m")
+                    total_monthly_costs[month_str] = total_monthly_costs.get(month_str, 0) + cost_val
+                except ValueError:
+                    pass
+        for f in filtered_fuel:
+            cost_val = as_number(f.get("cost"))
+            d_str = f.get("fuel_date") or f.get("created_at")
+            if d_str:
+                try:
+                    month_str = datetime.strptime(d_str[:10], "%Y-%m-%d").strftime("%Y-%m")
+                    total_monthly_costs[month_str] = total_monthly_costs.get(month_str, 0) + cost_val
+                except ValueError:
+                    pass
+        for fi in filtered_fines:
+            cost_val = as_number(fi.get("amount"))
+            d_str = fi.get("fine_date") or fi.get("created_at")
+            if d_str:
+                try:
+                    month_str = datetime.strptime(d_str[:10], "%Y-%m-%d").strftime("%Y-%m")
+                    total_monthly_costs[month_str] = total_monthly_costs.get(month_str, 0) + cost_val
+                except ValueError:
+                    pass
+                    
+        if total_monthly_costs:
+            df_evo = pd.DataFrame(list(total_monthly_costs.items()), columns=["Mês", "Custo Total (R$)"]).sort_values(by="Mês")
+            st.line_chart(df_evo.set_index("Mês"))
+        else:
+            st.info("Ainda não há dados suficientes para traçar a evolução de despesas.")
+
+    with col_chart4:
+        st.markdown("##### 🏆 Top 5 Veículos por Custo (Combustível + Manutenção no Período)")
+        v_costs = []
+        for v in vehicles:
+            v_id = v["id"]
+            fuel_cost = sum(as_number(f.get("cost")) for f in filtered_fuel if f.get("vehicle_id") == v_id)
+            maint_cost = sum(as_number(m.get("cost")) for m in filtered_maint if m.get("vehicle_id") == v_id)
+            v_costs.append({"Veículo": vehicle_label(v), "Gasto Total": fuel_cost + maint_cost})
+            
+        if v_costs and any(item["Gasto Total"] > 0 for item in v_costs):
+            df_v_costs = pd.DataFrame(v_costs).sort_values(by="Gasto Total", ascending=False).head(5)
+            st.bar_chart(df_v_costs.set_index("Veículo"))
+        else:
+            st.info("Ainda não há gastos registrados para os veículos ativos no período.")
+
 with tab_vehicles:
     st.subheader("Gerenciamento de Cadastro")
     
-    v_tab_view, v_tab_create, v_tab_edit, v_tab_delete = st.tabs([
-        "🔍 Visualizar Dados", "➕ Novo Cadastro", "✏️ Editar Registros", "❌ Excluir Registros"
+    v_tab_view, v_tab_docs, v_tab_create, v_tab_edit, v_tab_delete = st.tabs([
+        "🔍 Visualizar Dados", "📋 Status de Documentos", "➕ Novo Cadastro", "✏️ Editar Registros", "❌ Excluir Registros"
     ])
     
     with v_tab_view:
@@ -825,6 +881,77 @@ with tab_vehicles:
                 }), use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum motorista cadastrado.")
+
+    with v_tab_docs:
+        st.markdown("##### 📋 Controle Integrado de Vencimentos de Documentação")
+        doc_rows = []
+        today = date.today()
+        in_30_days = today + timedelta(days=30)
+        
+        # Vehicles IPVA and Insurance
+        for v in vehicles:
+            ipva_str = v.get("ipva_expiry")
+            if ipva_str:
+                try:
+                    ipva_dt = date.fromisoformat(ipva_str)
+                    if ipva_dt <= today:
+                        status = "🔴 Vencido"
+                    elif ipva_dt <= in_30_days:
+                        status = "🟡 Vence em breve"
+                    else:
+                        status = "🟢 Regular"
+                    doc_rows.append({
+                        "Entidade": f"🚗 Veículo: {vehicle_label(v)}",
+                        "Documento": "IPVA",
+                        "Vencimento": ipva_str,
+                        "Status": status
+                    })
+                except ValueError:
+                    pass
+            ins_str = v.get("insurance_expiry")
+            if ins_str:
+                try:
+                    ins_dt = date.fromisoformat(ins_str)
+                    if ins_dt <= today:
+                        status = "🔴 Vencido"
+                    elif ins_dt <= in_30_days:
+                        status = "🟡 Vence em breve"
+                    else:
+                        status = "🟢 Regular"
+                    doc_rows.append({
+                        "Entidade": f"🚗 Veículo: {vehicle_label(v)}",
+                        "Documento": "Seguro Obrigatório",
+                        "Vencimento": ins_str,
+                        "Status": status
+                    })
+                except ValueError:
+                    pass
+                    
+        # Drivers CNH
+        for d in drivers:
+            exp_str = d.get("license_expiry")
+            if exp_str:
+                try:
+                    exp_dt = date.fromisoformat(exp_str)
+                    if exp_dt <= today:
+                        status = "🔴 Vencido"
+                    elif exp_dt <= in_30_days:
+                        status = "🟡 Vence em breve"
+                    else:
+                        status = "🟢 Regular"
+                    doc_rows.append({
+                        "Entidade": f"👤 Motorista: {d['name']}",
+                        "Documento": "CNH",
+                        "Vencimento": exp_str,
+                        "Status": status
+                    })
+                except ValueError:
+                    pass
+                    
+        if doc_rows:
+            st.dataframe(pd.DataFrame(doc_rows), use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhuma data de validade de IPVA, seguro ou CNH cadastrada.")
                 
     with v_tab_create:
         col_c1, col_c2 = st.columns(2)
@@ -1011,8 +1138,7 @@ with tab_operations:
         if not vehicles:
             st.info("Cadastre veículos primeiro.")
         else:
-            # 🚀 AVISOS DE CONSUMO E MUNICÍPIOS LIVE (SEM FORM DE BLOQUEIO)
-            by_label_active = {vehicle_label(v): v for v in vehicles if v.get("status") != "Inactive"}
+            by_label_active = {vehicle_label(v): v for v in vehicles if v.get("status") != "Inativo"}
             selected = st.selectbox("Veículo", list(by_label_active), key="fuel_v_select")
             liters = st.number_input("Litros", min_value=0.01, step=1.0, value=30.0, key="fuel_liters")
             cost = st.number_input("Custo Total (R$)", min_value=0.01, step=1.0, value=150.0, key="fuel_cost")
@@ -1033,6 +1159,15 @@ with tab_operations:
             </div>
             """, unsafe_allow_html=True)
 
+            # Prevenção de Abastecimentos Duplicados
+            is_duplicate = any(
+                f.get("vehicle_id") == vehicle["id"] and
+                f.get("fuel_date") == str(fuel_date) and
+                as_number(f.get("liters")) == liters and
+                as_number(f.get("cost")) == cost
+                for f in fuel
+            )
+
             # Alerta Inteligente de Consumo Incomum
             is_abnormal = last_odo > 0 and diff_odo > 0 and (kml_calc < 3.0 or kml_calc > 28.0)
             confirm_save_abnormal = True
@@ -1043,6 +1178,8 @@ with tab_operations:
             if st.button("Salvar Abastecimento", type="primary", use_container_width=True):
                 if odometer < last_odo:
                     st.error(f"Erro: O odômetro digitado é menor do que o último registro deste veículo ({last_odo:,.0f} km).")
+                elif is_duplicate:
+                    st.error("⚠️ **Aviso de Duplicidade:** Já existe um abastecimento idêntico registrado para este veículo na mesma data, com a mesma quantidade de litros e valor!")
                 elif is_abnormal and not confirm_save_abnormal:
                     st.error("Erro: Marque a caixa de confirmação de consumo incomum para salvar.")
                 else:
@@ -1416,12 +1553,39 @@ with tab_logs:
     logs_data = rows("audit_log")
     if logs_data:
         df_logs = pd.DataFrame(logs_data)
+        
+        # Filtros de busca na Auditoria
+        col_log_f1, col_log_f2 = st.columns(2)
+        with col_log_f1:
+            search_query = st.text_input("🔍 Buscar nos Detalhes do Log", "")
+        with col_log_f2:
+            filter_action = st.selectbox("Filtrar por Tipo de Ação", ["Todos", "Cadastro", "Edição", "Exclusão", "Operação"])
+            
         if "created_at" in df_logs.columns:
             df_logs["created_at"] = pd.to_datetime(df_logs["created_at"])
             df_logs = df_logs.sort_values(by="created_at", ascending=False)
             df_logs["created_at"] = df_logs["created_at"].dt.strftime("%Y-%m-%d %H:%M:%S")
+            
+        # Filtros aplicados
+        filtered_logs = df_logs.copy()
+        if search_query:
+            filtered_logs = filtered_logs[
+                filtered_logs["action"].str.contains(search_query, case=False, na=False) |
+                filtered_logs["details"].str.contains(search_query, case=False, na=False)
+            ]
+            
+        if filter_action != "Todos":
+            if filter_action == "Cadastro":
+                filtered_logs = filtered_logs[filtered_logs["action"].str.contains("cadastro|registro", case=False, na=False)]
+            elif filter_action == "Edição":
+                filtered_logs = filtered_logs[filtered_logs["action"].str.contains("edição|atualizado", case=False, na=False)]
+            elif filter_action == "Exclusão":
+                filtered_logs = filtered_logs[filtered_logs["action"].str.contains("exclusão|excluído|excluir", case=False, na=False)]
+            elif filter_action == "Operação":
+                filtered_logs = filtered_logs[filtered_logs["action"].str.contains("check-in|saída|retorno|abastecimento|manutenção|multa", case=False, na=False)]
+
         st.dataframe(
-            df_logs[["created_at", "action", "details"]].rename(columns={
+            filtered_logs[["created_at", "action", "details"]].rename(columns={
                 "created_at": "Data/Hora",
                 "action": "Ação Realizada",
                 "details": "Detalhes"
