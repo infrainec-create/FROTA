@@ -1525,9 +1525,32 @@ with tab_reports:
         date_col = next((c for c in ["maint_date", "fuel_date", "checkin_at", "fine_date", "created_at"] if c in df_report.columns), None)
         if date_col:
             with filter_col2:
+                preset = st.selectbox(
+                    "Atalho de Período",
+                    ["Personalizado", "Últimos 30 Dias", "Este Mês", "Este Ano", "Todo o Histórico"],
+                    key="date_preset"
+                )
+                
+                today_val = date.today()
+                if preset == "Últimos 30 Dias":
+                    default_start = today_val - timedelta(days=30)
+                    default_end = today_val
+                elif preset == "Este Mês":
+                    default_start = date(today_val.year, today_val.month, 1)
+                    default_end = today_val
+                elif preset == "Este Ano":
+                    default_start = date(today_val.year, 1, 1)
+                    default_end = today_val
+                elif preset == "Todo o Histórico":
+                    default_start = date(2020, 1, 1)
+                    default_end = today_val
+                else:
+                    default_start = date(2026, 1, 1)
+                    default_end = today_val
+
                 df_report[date_col] = pd.to_datetime(df_report[date_col], errors='coerce')
-                start_d = st.date_input("Data Inicial", value=date(2026, 1, 1))
-                end_d = st.date_input("Data Final", value=date.today())
+                start_d = st.date_input("Data Inicial", value=default_start)
+                end_d = st.date_input("Data Final", value=default_end)
                 
                 filtered_df[date_col] = pd.to_datetime(filtered_df[date_col], errors='coerce')
                 filtered_df = filtered_df[
@@ -1674,6 +1697,20 @@ with tab_logs:
                 "details": "Detalhes"
             }), use_container_width=True, hide_index=True
         )
+        
+        # Export logs as CSV
+        csv_logs = filtered_logs[["created_at", "action", "details"]].rename(columns={
+            "created_at": "Data/Hora",
+            "action": "Ação Realizada",
+            "details": "Detalhes"
+        }).to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            label="📥 Exportar Logs de Auditoria (CSV)",
+            data=csv_logs,
+            file_name=f"logs_auditoria_{datetime.today().strftime('%Y-%m-%d')}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
     else:
         st.info("Nenhum registro de auditoria disponível.")
 
@@ -1697,6 +1734,26 @@ with tab_settings:
         st.success("Configurações atualizadas e sincronizadas no Google Drive!")
         st.rerun()
 
+    st.divider()
+    st.markdown("##### 💾 Backup do Banco de Dados")
+    st.caption("Baixe uma cópia completa do arquivo de banco de dados SQLite local (`frota_drive.db`).")
+    db_path = "frota_drive.db"
+    if os.path.exists(db_path):
+        try:
+            with open(db_path, "rb") as f:
+                db_bytes = f.read()
+            st.download_button(
+                label="📥 Baixar Banco de Dados (SQLite)",
+                data=db_bytes,
+                file_name=f"backup_frota_{datetime.today().strftime('%Y-%m-%d')}.db",
+                mime="application/x-sqlite3",
+                use_container_width=True
+            )
+        except Exception as e:
+            st.error(f"Erro ao ler banco de dados: {e}")
+    else:
+        st.info("Arquivo de banco de dados local não encontrado.")
+
 with tab_ai:
     st.subheader("🤖 Analista de Manutenção Inteligente")
     st.caption("Parecer automatizado gerado por Inteligência Artificial (OpenAI) baseado em dados históricos reais.")
@@ -1707,29 +1764,49 @@ with tab_ai:
     elif not vehicles:
         st.info("Cadastre um veículo e registre manutenções/abastecimentos para poder rodar a IA.")
     else:
-        selected_ai = st.selectbox("Escolha o veículo para o Parecer Técnico", [vehicle_label(v) for v in vehicles], key="ai_select")
-        vehicle = next((v for v in vehicles if vehicle_label(v) == selected_ai), None)
+        options_ai = ["Toda a Frota (Consolidado)"] + [vehicle_label(v) for v in vehicles]
+        selected_ai = st.selectbox("Escolha o veículo ou escopo para o Parecer Técnico", options_ai, key="ai_select")
+        
+        if selected_ai == "Toda a Frota (Consolidado)":
+            vehicle = None
+        else:
+            vehicle = next((v for v in vehicles if vehicle_label(v) == selected_ai), None)
         
         ai_mode = st.radio("Selecione o Tipo de Análise da IA", ["Parecer Técnico Geral", "Previsão Orçamentária (Próximo Mês)"], horizontal=True)
         
-        if vehicle and st.button("🚀 Gerar Parecer de IA", type="primary"):
+        # We can run if vehicle is None (Toda a Frota) OR if single vehicle is selected
+        run_ai = False
+        if selected_ai == "Toda a Frota (Consolidado)" or vehicle is not None:
+            run_ai = True
+            
+        if run_ai and st.button("🚀 Gerar Parecer de IA", type="primary"):
             with st.spinner("Analisando padrões de quilometragem, custos e histórico de serviços..."):
                 try:
                     mode_val = "budget" if ai_mode == "Previsão Orçamentária (Próximo Mês)" else "general"
+                    
+                    if vehicle is None:
+                        maint_list = maintenance
+                        fuel_list = fuel
+                    else:
+                        maint_list = [m for m in maintenance if m.get("vehicle_id") == vehicle["id"]]
+                        fuel_list = [f for f in fuel if f.get("vehicle_id") == vehicle["id"]]
+                        
                     answer = analyze_maintenance(
                         str(api_key), vehicle,
-                        [m for m in maintenance if m.get("vehicle_id") == vehicle["id"]],
-                        [f for f in fuel if f.get("vehicle_id") == vehicle["id"]],
-                        mode=mode_val
+                        maint_list,
+                        fuel_list,
+                        mode=mode_val,
+                        vehicles_list=vehicles
                     )
                     
                     low_answer = answer.lower()
+                    subject = "na frota" if vehicle is None else "no veículo"
                     if "critico" in low_answer or "crítico" in low_answer:
-                        st.markdown('<div class="alert-card-danger">🚨 **Risco Identificado:** A IA apontou pontos CRÍTICOS que exigem atenção urgente no veículo!</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="alert-card-danger">🚨 **Risco Identificado:** A IA apontou pontos CRÍTICOS que exigem atenção urgente {subject}!</div>', unsafe_allow_html=True)
                     elif "atencao" in low_answer or "atenção" in low_answer:
-                        st.markdown('<div class="alert-card-warning">⚠️ **Alerta:** A IA sugere monitoramento e ações preventivas em breve.</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="alert-card-warning">⚠️ **Alerta:** A IA sugere monitoramento e ações preventivas {subject} em breve.</div>', unsafe_allow_html=True)
                     else:
-                        st.markdown('<div class="alert-card-success">✔️ **Sem Riscos Imediatos:** A IA sugere apenas monitoramento regular.</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="alert-card-success">✔️ **Sem Riscos Imediatos:** A IA sugere apenas monitoramento regular {subject}.</div>', unsafe_allow_html=True)
                     
                     st.markdown("### 📋 Análise Detalhada")
                     st.markdown(answer)
