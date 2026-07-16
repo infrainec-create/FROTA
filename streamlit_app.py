@@ -284,7 +284,7 @@ def rows(table: str) -> list[dict[str, Any]]:
 
 
 # Query Data Tables
-users, vehicles, drivers, maintenance, fuel, checkins, fines = (rows(name) for name in ("users", "vehicles", "drivers", "maintenance", "fuel", "checkins", "fines"))
+users, vehicles, drivers, maintenance, fuel, checkins, fines, expenses = (rows(name) for name in ("users", "vehicles", "drivers", "maintenance", "fuel", "checkins", "fines", "expenses"))
 
 
 # Sidebar Logout Button and Theme Selector
@@ -527,8 +527,8 @@ st.caption("Gestão avançada de frotas com banco SQL de alta performance (SQLit
 if not (secret("gcp_service_account") and (secret("google_drive_folder_id") or secret("google_sheet_id"))):
     st.warning("⚠️ Executando com banco de dados SQLite local (`frota_drive.db`). Para sincronizar os dados no Google Drive, configure o arquivo `.streamlit/secrets.toml`.")
 
-tab_dashboard, tab_vehicles, tab_operations, tab_maintenance, tab_fines, tab_reports, tab_logs, tab_settings, tab_ai = st.tabs([
-    "📊 Painel Geral", "👥 Veículos e Motoristas", "⚡ Operações Rápidas", "🔧 Manutenção", "🚨 Multas & Infrações", "📑 Relatórios & Filtros", "📁 Auditoria", "⚙️ Configurações", "🤖 Analista IA"
+tab_dashboard, tab_vehicles, tab_operations, tab_maintenance, tab_fines, tab_expenses, tab_reports, tab_logs, tab_settings, tab_ai = st.tabs([
+    "📊 Painel Geral", "👥 Veículos e Motoristas", "⚡ Operações Rápidas", "🔧 Manutenção", "🚨 Multas & Infrações", "💸 Outras Despesas", "📑 Relatórios & Filtros", "📁 Auditoria", "⚙️ Configurações", "🤖 Analista IA"
 ])
 
 # Obtém limite de km configurado no banco de dados (padrão 10.000)
@@ -595,6 +595,20 @@ with tab_dashboard:
             except ValueError:
                 pass
         filtered_fines.append(fi)
+
+    filtered_expenses = []
+    for e in expenses:
+        d_str = e.get("expense_date") or e.get("created_at")
+        if d_str:
+            try:
+                dt = datetime.strptime(d_str[:10], "%Y-%m-%d")
+                if selected_year != "Todos" and dt.year != int(selected_year):
+                    continue
+                if selected_month is not None and dt.month != selected_month:
+                    continue
+            except ValueError:
+                pass
+        filtered_expenses.append(e)
     
     active = sum(v.get("status") == "Disponível" for v in vehicles)
     in_maintenance = sum(v.get("status") == "Manutenção" for v in vehicles)
@@ -602,7 +616,8 @@ with tab_dashboard:
     total_maint = sum(as_number(m.get("cost")) for m in filtered_maint)
     total_fuel = sum(as_number(f.get("cost")) for f in filtered_fuel)
     total_fines = sum(as_number(fi.get("amount")) for fi in filtered_fines)
-    total_cost = total_maint + total_fuel + total_fines
+    total_expenses = sum(as_number(e.get("cost")) for e in filtered_expenses)
+    total_cost = total_maint + total_fuel + total_fines + total_expenses
     
     col_a, col_b, col_c, col_d = st.columns(4)
     with col_a:
@@ -689,6 +704,106 @@ with tab_dashboard:
             st.markdown(f'<div class="{card_class}">{alert}</div>', unsafe_allow_html=True)
     else:
         st.markdown('<div class="alert-card-success">✔️ Todos os veículos e habilitações estão com a documentação e manutenção preventivas em dia!</div>', unsafe_allow_html=True)
+
+    st.divider()
+
+    # 📆 CRONOGRAMA MENSAL DE VENCIMENTOS (IPVA, Seguro e CNH no período selecionado)
+    st.markdown(f"### 📅 Cronograma de Vencimentos ({selected_month_name} / {selected_year})")
+    vencimentos_rows = []
+    for vehicle in vehicles:
+        ipva_str = vehicle.get("ipva_expiry")
+        if ipva_str:
+            try:
+                dt = datetime.strptime(ipva_str[:10], "%Y-%m-%d")
+                match_y = (selected_year == "Todos" or dt.year == int(selected_year))
+                match_m = (selected_month is None or dt.month == selected_month)
+                if match_y and match_m:
+                    vencimentos_rows.append({
+                        "Recurso": f"🚗 Veículo: {vehicle_label(vehicle)}",
+                        "Tipo de Despesa/Conta": "IPVA",
+                        "Data Limite": dt.strftime("%d/%m/%Y"),
+                        "Status": "Vencido" if dt.date() < today else ("Atenção" if dt.date() <= in_30_days else "Em dia")
+                    })
+            except ValueError:
+                pass
+                
+        ins_str = vehicle.get("insurance_expiry")
+        if ins_str:
+            try:
+                dt = datetime.strptime(ins_str[:10], "%Y-%m-%d")
+                match_y = (selected_year == "Todos" or dt.year == int(selected_year))
+                match_m = (selected_month is None or dt.month == selected_month)
+                if match_y and match_m:
+                    vencimentos_rows.append({
+                        "Recurso": f"🚗 Veículo: {vehicle_label(vehicle)}",
+                        "Tipo de Despesa/Conta": "Seguro",
+                        "Data Limite": dt.strftime("%d/%m/%Y"),
+                        "Status": "Vencido" if dt.date() < today else ("Atenção" if dt.date() <= in_30_days else "Em dia")
+                    })
+            except ValueError:
+                pass
+
+    for driver in drivers:
+        expiry_str = driver.get("license_expiry")
+        if expiry_str:
+            try:
+                dt = datetime.strptime(expiry_str[:10], "%Y-%m-%d")
+                match_y = (selected_year == "Todos" or dt.year == int(selected_year))
+                match_m = (selected_month is None or dt.month == selected_month)
+                if match_y and match_m:
+                    vencimentos_rows.append({
+                        "Recurso": f"👤 Motorista: {driver.get('name')}",
+                        "Tipo de Despesa/Conta": "Vencimento CNH",
+                        "Data Limite": dt.strftime("%d/%m/%Y"),
+                        "Status": "Vencido" if dt.date() < today else ("Atenção" if dt.date() <= in_30_days else "Em dia")
+                    })
+            except ValueError:
+                pass
+
+    if vencimentos_rows:
+        st.dataframe(pd.DataFrame(vencimentos_rows), use_container_width=True, hide_index=True)
+    else:
+        st.info("Nenhum vencimento de IPVA, Seguro ou CNH agendado para o período selecionado.")
+
+    st.divider()
+
+    # 🚨 DETECTOR DE CONSUMO ANÔMALO
+    st.markdown("### ⛽ Eficiência de Combustível & Detector de Desvio")
+    fleet_kmls = []
+    vehicle_kmls = {}
+    for v in vehicles:
+        v_fuel = [f for f in fuel if f.get("vehicle_id") == v["id"]]
+        v_checkins = [c for c in checkins if c.get("vehicle_id") == v["id"]]
+        odos = []
+        for item in v_fuel:
+            odos.append(as_number(item.get("odometer")))
+        for item in v_checkins:
+            odos.extend([as_number(item.get("odometer_start")), as_number(item.get("odometer_end"))])
+        km_run = max(odos) - min(odos) if len(odos) >= 2 else 0.0
+        liters = sum(as_number(f.get("liters")) for f in v_fuel)
+        if liters > 0 and km_run > 0:
+            kml = km_run / liters
+            fleet_kmls.append(kml)
+            vehicle_kmls[v["id"]] = kml
+            
+    fleet_avg_kml = sum(fleet_kmls) / len(fleet_kmls) if fleet_kmls else 0.0
+    
+    consumption_alerts = []
+    if fleet_avg_kml > 0:
+        for v in vehicles:
+            v_kml = vehicle_kmls.get(v["id"], 0.0)
+            if v_kml > 0 and v_kml < (0.8 * fleet_avg_kml):
+                pct_diff = ((fleet_avg_kml - v_kml) / fleet_avg_kml) * 100
+                consumption_alerts.append(
+                    f"⚠️ **Rendimento Baixo / Consumo Excessivo**: O veículo **{vehicle_label(v)}** está com rendimento de **{v_kml:.2f} km/L** "
+                    f"({pct_diff:.1f}% abaixo da média da frota de **{fleet_avg_kml:.2f} km/L**). Recomenda-se revisão mecânica ou vistoria."
+                )
+
+    if consumption_alerts:
+        for c_alert in consumption_alerts:
+            st.markdown(f'<div class="alert-card-warning">{c_alert}</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="alert-card-success">✔️ Desempenho de consumo de todos os veículos está dentro do padrão esperado da frota!</div>', unsafe_allow_html=True)
         
     st.divider()
     
@@ -702,6 +817,7 @@ with tab_dashboard:
         v_fuel = [f for f in fuel if f.get("vehicle_id") == v_id]
         v_maint = [m for m in maintenance if m.get("vehicle_id") == v_id]
         v_checkins = [c for c in checkins if c.get("vehicle_id") == v_id]
+        v_expenses = [e for e in expenses if e.get("vehicle_id") == v_id]
         
         odos = []
         for item in v_fuel + v_maint:
@@ -713,7 +829,8 @@ with tab_dashboard:
         
         fuel_cost = sum(as_number(f.get("cost")) for f in v_fuel)
         maint_cost = sum(as_number(m.get("cost")) for m in v_maint)
-        total_v_cost = fuel_cost + maint_cost
+        exp_cost = sum(as_number(e.get("cost")) for e in v_expenses)
+        total_v_cost = fuel_cost + maint_cost + exp_cost
         
         liters = sum(as_number(f.get("liters")) for f in v_fuel)
         kml = km_run / liters if liters > 0 else 0.0
@@ -737,24 +854,27 @@ with tab_dashboard:
 
     # 📊 CUSTOM SEGMENTED COST BREAKDOWN PROGRESS BAR
     st.markdown("##### 📊 Distribuição Porcentual de Despesas da Frota no Período")
-    total_c = total_fuel + total_maint + total_fines
+    total_c = total_fuel + total_maint + total_fines + total_expenses
     if total_c > 0:
         pct_fuel = (total_fuel / total_c) * 100
         pct_maint = (total_maint / total_c) * 100
         pct_fines = (total_fines / total_c) * 100
+        pct_exp = (total_expenses / total_c) * 100
         
         st.markdown(f"""
         <div style="display: flex; height: 28px; border-radius: 14px; overflow: hidden; margin: 15px 0 10px 0; background: rgba(128,128,128,0.15); box-shadow: inset 0 2px 4px rgba(0,0,0,0.06);">
             {"".join([
                 f'<div style="width: {pct_fuel}%; background: linear-gradient(135deg, #3b82f6, #2563eb); text-align: center; color: white; font-size: 11px; line-height: 28px; font-weight: 600;" title="Abastecimento: R$ {total_fuel:,.2f}">⛽ {pct_fuel:.1f}%</div>' if pct_fuel > 0 else '',
                 f'<div style="width: {pct_maint}%; background: linear-gradient(135deg, #10b981, #059669); text-align: center; color: white; font-size: 11px; line-height: 28px; font-weight: 600;" title="Manutenção: R$ {total_maint:,.2f}">🔧 {pct_maint:.1f}%</div>' if pct_maint > 0 else '',
-                f'<div style="width: {pct_fines}%; background: linear-gradient(135deg, #ef4444, #dc2626); text-align: center; color: white; font-size: 11px; line-height: 28px; font-weight: 600;" title="Multas: R$ {total_fines:,.2f}">🚨 {pct_fines:.1f}%</div>' if pct_fines > 0 else ''
+                f'<div style="width: {pct_fines}%; background: linear-gradient(135deg, #ef4444, #dc2626); text-align: center; color: white; font-size: 11px; line-height: 28px; font-weight: 600;" title="Multas: R$ {total_fines:,.2f}">🚨 {pct_fines:.1f}%</div>' if pct_fines > 0 else '',
+                f'<div style="width: {pct_exp}%; background: linear-gradient(135deg, #a78bfa, #8b5cf6); text-align: center; color: white; font-size: 11px; line-height: 28px; font-weight: 600;" title="Outros: R$ {total_expenses:,.2f}">💸 {pct_exp:.1f}%</div>' if pct_exp > 0 else ''
             ])}
         </div>
-        <div style="display: flex; justify-content: space-around; font-size: 0.85rem; color: var(--text-color); opacity: 0.8; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-around; font-size: 0.85rem; color: var(--text-color); opacity: 0.8; margin-bottom: 20px; flex-wrap: wrap;">
             <div>🔵 Abastecimento: <b>R$ {total_fuel:,.2f}</b></div>
             <div>🟢 Manutenção: <b>R$ {total_maint:,.2f}</b></div>
             <div>🔴 Multas: <b>R$ {total_fines:,.2f}</b></div>
+            <div>🟣 Outros: <b>R$ {total_expenses:,.2f}</b></div>
         </div>
         """, unsafe_allow_html=True)
     else:
@@ -785,6 +905,15 @@ with tab_dashboard:
                 try:
                     month_str = datetime.strptime(fuel_date_str[:10], "%Y-%m-%d").strftime("%Y-%m")
                     costs_data.append({"Mês": month_str, "Categoria": "Abastecimento", "Valor": cost_val})
+                except ValueError:
+                    pass
+        for e in filtered_expenses:
+            cost_val = as_number(e.get("cost"))
+            expense_date_str = e.get("expense_date")
+            if expense_date_str:
+                try:
+                    month_str = datetime.strptime(expense_date_str[:10], "%Y-%m-%d").strftime("%Y-%m")
+                    costs_data.append({"Mês": month_str, "Categoria": "Outras Despesas", "Valor": cost_val})
                 except ValueError:
                     pass
         if costs_data:
@@ -838,6 +967,15 @@ with tab_dashboard:
                     total_monthly_costs[month_str] = total_monthly_costs.get(month_str, 0) + cost_val
                 except ValueError:
                     pass
+        for e in filtered_expenses:
+            cost_val = as_number(e.get("cost"))
+            d_str = e.get("expense_date") or e.get("created_at")
+            if d_str:
+                try:
+                    month_str = datetime.strptime(d_str[:10], "%Y-%m-%d").strftime("%Y-%m")
+                    total_monthly_costs[month_str] = total_monthly_costs.get(month_str, 0) + cost_val
+                except ValueError:
+                    pass
                     
         if total_monthly_costs:
             df_evo = pd.DataFrame(list(total_monthly_costs.items()), columns=["Mês", "Custo Total (R$)"]).sort_values(by="Mês")
@@ -846,13 +984,14 @@ with tab_dashboard:
             st.info("Ainda não há dados suficientes para traçar a evolução de despesas.")
 
     with col_chart4:
-        st.markdown("##### 🏆 Top 5 Veículos por Custo (Combustível + Manutenção no Período)")
+        st.markdown("##### 🏆 Top 5 Veículos por Custo (Combustível + Manutenção + Despesas no Período)")
         v_costs = []
         for v in vehicles:
             v_id = v["id"]
             fuel_cost = sum(as_number(f.get("cost")) for f in filtered_fuel if f.get("vehicle_id") == v_id)
             maint_cost = sum(as_number(m.get("cost")) for m in filtered_maint if m.get("vehicle_id") == v_id)
-            v_costs.append({"Veículo": vehicle_label(v), "Gasto Total": fuel_cost + maint_cost})
+            exp_cost = sum(as_number(e.get("cost")) for e in filtered_expenses if e.get("vehicle_id") == v_id)
+            v_costs.append({"Veículo": vehicle_label(v), "Gasto Total": fuel_cost + maint_cost + exp_cost})
             
         if v_costs and any(item["Gasto Total"] > 0 for item in v_costs):
             df_v_costs = pd.DataFrame(v_costs).sort_values(by="Gasto Total", ascending=False).head(5)
@@ -1484,6 +1623,121 @@ with tab_fines:
                     st.success("Multa excluída com sucesso!")
                     st.rerun()
 
+with tab_expenses:
+    st.subheader("💸 Controle de Outras Despesas Operacionais")
+    st.caption("Registre custos como pedágios, estacionamento, lavagens e outras taxas.")
+    
+    exp_tab1, exp_tab2, exp_tab3 = st.tabs([
+        "🔍 Visualizar Despesas", "➕ Registrar Despesa", "✏️ Gestão de Despesas"
+    ])
+    
+    with exp_tab1:
+        if expenses:
+            df_exp_list = safe_dataframe(expenses, ["expense_date", "vehicle_id", "expense_type", "cost", "description"])
+            vehicles_dict = {v["id"]: vehicle_label(v) for v in vehicles}
+            df_exp_list["Veículo"] = df_exp_list["vehicle_id"].map(vehicles_dict).fillna("Veículo Excluído")
+            
+            df_exp_disp = df_exp_list.copy()
+            df_exp_disp["cost"] = df_exp_disp["cost"].map(lambda x: f"R$ {as_number(x):,.2f}")
+            
+            st.dataframe(
+                df_exp_disp[["expense_date", "Veículo", "expense_type", "description", "cost"]].rename(columns={
+                    "expense_date": "Data",
+                    "expense_type": "Tipo de Despesa",
+                    "description": "Descrição",
+                    "cost": "Valor"
+                }), use_container_width=True, hide_index=True
+            )
+        else:
+            st.info("Nenhuma despesa registrada até o momento.")
+            
+    with exp_tab2:
+        if not vehicles:
+            st.info("Cadastre veículos primeiro.")
+        else:
+            by_label_exp = {vehicle_label(v): v for v in vehicles if v.get("status") != "Inativo"}
+            with st.form("new_expense_form", clear_on_submit=True):
+                selected_v = st.selectbox("Veículo", list(by_label_exp), key="exp_v_select")
+                exp_type = st.selectbox("Tipo de Despesa", ["Pedágio", "Estacionamento", "Higienização / Lavagem", "Outros"])
+                cost = st.number_input("Valor da Despesa (R$)", min_value=0.01, step=1.0, value=20.0)
+                exp_date = st.date_input("Data da Despesa", value=date.today())
+                desc = st.text_input("Descrição / Notas", placeholder="Ex: Pedágio Rodovia dos Bandeirantes")
+                
+                if st.form_submit_button("Registrar Despesa"):
+                    v_item = by_label_exp[selected_v]
+                    repo.add("expenses", {
+                        "vehicle_id": v_item["id"],
+                        "expense_type": exp_type,
+                        "cost": cost,
+                        "expense_date": exp_date,
+                        "description": desc.strip()
+                    })
+                    log_action("Registro de Despesa", f"Despesa {exp_type} registrada para {selected_v}. Valor: R$ {cost}.")
+                    st.cache_data.clear()
+                    st.success("Despesa registrada com sucesso!")
+                    st.rerun()
+                    
+    with exp_tab3:
+        if not expenses:
+            st.info("Nenhuma despesa registrada.")
+        else:
+            vehicles_dict = {v["id"]: vehicle_label(v) for v in vehicles}
+            expenses_map = {}
+            for e in expenses:
+                v_lbl = vehicles_dict.get(e.get("vehicle_id"), "Desconhecido")
+                label = f"{e.get('expense_date')} - {v_lbl} - {e.get('expense_type')} (R$ {as_number(e.get('cost')):.2f})"
+                expenses_map[label] = e
+                
+            col_ex1, col_ex2 = st.columns(2)
+            with col_ex1:
+                st.markdown("##### Editar Despesa")
+                selected_exp_edit = st.selectbox("Selecione a Despesa para editar", [None] + list(expenses_map), key="edit_exp_select")
+                if selected_exp_edit:
+                    exp_data = expenses_map[selected_exp_edit]
+                    edit_v = next((v for v in vehicles if v["id"] == exp_data.get("vehicle_id")), None)
+                    v_active_lbls = [vehicle_label(v) for v in vehicles if v.get("status") != "Inativo" or v["id"] == exp_data.get("vehicle_id")]
+                    
+                    edit_v_sel = st.selectbox("Veículo", v_active_lbls, index=v_active_lbls.index(vehicle_label(edit_v)) if edit_v else 0, key="edit_exp_v")
+                    edit_type = st.selectbox("Tipo de Despesa", ["Pedágio", "Estacionamento", "Higienização / Lavagem", "Outros"], index=["Pedágio", "Estacionamento", "Higienização / Lavagem", "Outros"].index(exp_data.get("expense_type", "Pedágio")) if exp_data.get("expense_type") in ["Pedágio", "Estacionamento", "Higienização / Lavagem", "Outros"] else 0, key="edit_exp_type")
+                    edit_cost = st.number_input("Valor da Despesa (R$)", min_value=0.01, step=1.0, value=float(as_number(exp_data.get("cost"))), key="edit_exp_cost")
+                    
+                    raw_date = exp_data.get("expense_date", "")
+                    try:
+                        parsed_date = date.fromisoformat(raw_date[:10])
+                    except ValueError:
+                        parsed_date = date.today()
+                    edit_date = st.date_input("Data da Despesa", value=parsed_date, key="edit_exp_date")
+                    edit_desc = st.text_input("Descrição / Notas", value=exp_data.get("description", ""), key="edit_exp_desc")
+                    
+                    if st.button("Salvar Alterações", key="save_exp_btn"):
+                        by_label_active = {vehicle_label(v): v for v in vehicles}
+                        selected_v_obj = by_label_active[edit_v_sel]
+                        repo.update("expenses", exp_data["id"], {
+                            "vehicle_id": selected_v_obj["id"],
+                            "expense_type": edit_type,
+                            "cost": edit_cost,
+                            "expense_date": edit_date,
+                            "description": edit_desc.strip()
+                        })
+                        log_action("Edição de Despesa", f"Despesa ID {exp_data['id']} atualizada.")
+                        st.cache_data.clear()
+                        st.success("Despesa atualizada com sucesso!")
+                        st.rerun()
+                        
+            with col_ex2:
+                st.markdown("##### Excluir Despesa")
+                selected_exp_del = st.selectbox("Selecione a Despesa para excluir", [None] + list(expenses_map), key="del_exp_select")
+                if selected_exp_del:
+                    exp_data = expenses_map[selected_exp_del]
+                    st.error("⚠️ Atenção: Isso excluirá permanentemente o registro desta despesa.")
+                    confirm_e = st.checkbox("Confirmo a exclusão definitiva desta despesa.", key="confirm_exp_del")
+                    if st.button("Excluir Despesa", type="primary", disabled=not confirm_e, key="del_exp_btn"):
+                        repo.delete("expenses", exp_data["id"])
+                        log_action("Exclusão de Despesa", f"Despesa ID {exp_data['id']} excluída.")
+                        st.cache_data.clear()
+                        st.success("Despesa excluída com sucesso!")
+                        st.rerun()
+
 with tab_reports:
     st.subheader("📑 Central de Relatórios com Filtros Dinâmicos")
     
@@ -1493,7 +1747,8 @@ with tab_reports:
         "fuel": "Abastecimento",
         "drivers": "Motoristas",
         "checkins": "Check-ins",
-        "fines": "Multas"
+        "fines": "Multas",
+        "expenses": "Outras Despesas"
     }
     report_name = st.selectbox(
         "Selecione a tabela de dados",
@@ -1606,6 +1861,8 @@ with tab_reports:
             "notes": "Observações",
             "fine_date": "Data da Infração",
             "amount": "Valor da Multa",
+            "expense_type": "Tipo de Despesa",
+            "expense_date": "Data da Despesa",
             "Nome Veículo": "Veículo",
             "Nome Motorista": "Motorista"
         }
@@ -1785,9 +2042,11 @@ with tab_ai:
                     mode_val = "budget" if ai_mode == "Previsão Orçamentária (Próximo Mês)" else "general"
                     
                     if vehicle is None:
+                        exp_list = expenses
                         maint_list = maintenance
                         fuel_list = fuel
                     else:
+                        exp_list = [e for e in expenses if e.get("vehicle_id") == vehicle["id"]]
                         maint_list = [m for m in maintenance if m.get("vehicle_id") == vehicle["id"]]
                         fuel_list = [f for f in fuel if f.get("vehicle_id") == vehicle["id"]]
                         
@@ -1796,7 +2055,8 @@ with tab_ai:
                         maint_list,
                         fuel_list,
                         mode=mode_val,
-                        vehicles_list=vehicles
+                        vehicles_list=vehicles,
+                        expenses=exp_list
                     )
                     
                     low_answer = answer.lower()
