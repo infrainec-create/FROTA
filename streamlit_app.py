@@ -2068,4 +2068,13 @@ with tab_ai:
                     st.markdown("### 📋 Análise Detalhada")
                     st.markdown(answer)
                 except Exception as e:
-                    st.error(f"Erro ao gerar parecer técnico: {e}")
+                    err_str = str(e)
+                    if "insufficient_quota" in err_str or "quota" in err_str.lower() or "429" in err_str:
+                        st.error(
+                            "❌ **Cota da API do OpenAI Excedida:** A chave de API fornecida esgotou seus créditos ou atingiu o limite de faturamento.\n\n"
+                            "**Como resolver:**\n"
+                            "1. Acesse o painel financeiro da OpenAI (https://platform.openai.com/settings/organization/billing/overview) e faça uma recarga de créditos na sua conta.\n"
+                            "2. Ou forneça uma nova chave de API ativa nas **Configurações** da aplicação."
+                        )
+                    else:
+                        st.error(f"Erro ao gerar parecer técnico: {e}")
