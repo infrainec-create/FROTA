@@ -81,26 +81,26 @@ if st.session_state["authenticated"]:
 # Core CSS variables override for Theme configurations
 DARK_THEME_CSS = """
     :root {
-        --primary-color: #0b7285 !important;
-        --background-color: #0b0f19 !important;
-        --secondary-background-color: #111827 !important;
-        --text-color: #f3f4f6 !important;
+        --primary-color: #0052cc !important;
+        --background-color: #0f172a !important;
+        --secondary-background-color: #1e293b !important;
+        --text-color: #f8fafc !important;
 
-        --style-primary-color: #0b7285 !important;
-        --style-background-color: #0b0f19 !important;
-        --style-secondary-background-color: #111827 !important;
-        --style-text-color: #f3f4f6 !important;
+        --style-primary-color: #0052cc !important;
+        --style-background-color: #0f172a !important;
+        --style-secondary-background-color: #1e293b !important;
+        --style-text-color: #f8fafc !important;
     }
 """
 
 LIGHT_THEME_CSS = """
     :root {
-        --primary-color: #0b7285 !important;
+        --primary-color: #0052cc !important;
         --background-color: #ffffff !important;
         --secondary-background-color: #f8fafc !important;
         --text-color: #0f172a !important;
 
-        --style-primary-color: #0b7285 !important;
+        --style-primary-color: #0052cc !important;
         --style-background-color: #ffffff !important;
         --style-secondary-background-color: #f8fafc !important;
         --style-text-color: #0f172a !important;
@@ -392,6 +392,19 @@ html, body, [class*="css"] {{
     font-size: 0.9rem;
     margin-bottom: 0.8rem;
 }}
+/* Alinha os botões principais para padrão premium */
+.stButton>button {
+    border-radius: 12px;
+    font-weight: 600;
+    height: 3.2em;
+    width: 100%;
+    margin-top: 10px;
+    transition: all 0.2s ease-in-out;
+}
+.stButton>button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
 </style>
 """, unsafe_allow_html=True)
 
