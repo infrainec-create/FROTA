@@ -306,7 +306,7 @@ st.sidebar.divider()
 
 theme_option = st.sidebar.selectbox(
     "🌓 Tema da Interface",
-    ["Padrão do Dispositivo", "Escuro Premium"],
+    ["Padrão do Dispositivo", "Escuro Premium", "Claro Soft"],
     help="Escolha o estilo visual do sistema."
 )
 
@@ -314,6 +314,8 @@ theme_option = st.sidebar.selectbox(
 theme_css = ""
 if theme_option == "Escuro Premium":
     theme_css = DARK_THEME_CSS
+elif theme_option == "Claro Soft":
+    theme_css = LIGHT_THEME_CSS
 
 st.markdown(f"""
 <style>
