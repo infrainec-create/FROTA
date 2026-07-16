@@ -103,14 +103,17 @@ class DriveRepository:
                             if files:
                                 self.drive_file_id = files[0]["id"]
 
+                    uploaded_successfully = False
                     if self.drive_file_id:
                         # Atualiza o arquivo existente
                         with open(self.db_path, "rb") as f:
-                            session.patch(
+                            res = session.patch(
                                 f"https://www.googleapis.com/upload/drive/v3/files/{self.drive_file_id}?uploadType=media",
                                 data=f.read(),
                                 headers={"Content-Type": "application/x-sqlite3"}
                             )
+                            if res.status_code in (200, 201):
+                                uploaded_successfully = True
                     else:
                         # Cria um novo arquivo dentro da pasta compartilhada do usuário
                         # (isso consome a cota de armazenamento do proprietário da pasta, não do Service Account)
@@ -123,8 +126,69 @@ class DriveRepository:
                             "file": ("frota.db", open(self.db_path, "rb"), "application/x-sqlite3")
                         }
                         res = session.post("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", files=files)
-                        if res.status_code == 200:
+                        if res.status_code in (200, 201):
                             self.drive_file_id = res.json().get("id")
+                            uploaded_successfully = True
+
+                    # Se o upload principal do frota.db deu certo, gerencia o backup rotativo nos slots do Drive
+                    if uploaded_successfully:
+                        try:
+                            # 1. Determina o próximo slot
+                            ultimo_slot = 1
+                            conn = sqlite3.connect(self.db_path)
+                            cursor = conn.cursor()
+                            try:
+                                cursor.execute("SELECT value FROM config WHERE key = 'ultimo_backup_slot'")
+                                row = cursor.fetchone()
+                                if row:
+                                    ultimo_slot = int(row[0])
+                            except Exception:
+                                pass
+
+                            next_slot = (ultimo_slot % 5) + 1
+                            backup_name = f"frota_backup_{next_slot}.db"
+
+                            # 2. Procura se o arquivo do slot já existe na pasta do Drive
+                            q_backup = f"name='{backup_name}' and '{self.google_drive_folder_id}' in parents and trashed=false"
+                            search_backup = session.get("https://www.googleapis.com/drive/v3/files", params={"q": q_backup, "fields": "files(id)"})
+                            
+                            if search_backup.status_code == 200:
+                                files_backup = search_backup.json().get("files", [])
+                                if files_backup:
+                                    # Slot já existe, atualizamos ele (consumindo cota do usuário)
+                                    backup_file_id = files_backup[0]["id"]
+                                    with open(self.db_path, "rb") as f:
+                                        session.patch(
+                                            f"https://www.googleapis.com/upload/drive/v3/files/{backup_file_id}?uploadType=media",
+                                            data=f.read(),
+                                            headers={"Content-Type": "application/x-sqlite3"}
+                                        )
+                                    # Salva o slot atualizado localmente
+                                    try:
+                                        cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('ultimo_backup_slot', ?)", (str(next_slot),))
+                                        conn.commit()
+                                    except Exception:
+                                        pass
+                                else:
+                                    # Se não existe, tenta criar
+                                    metadata = {
+                                        "name": backup_name,
+                                        "parents": [self.google_drive_folder_id]
+                                    }
+                                    files = {
+                                        "data": ("metadata", json.dumps(metadata), "application/json; charset=UTF-8"),
+                                        "file": (backup_name, open(self.db_path, "rb"), "application/x-sqlite3")
+                                    }
+                                    res_create = session.post("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", files=files)
+                                    if res_create.status_code in (200, 201):
+                                        try:
+                                            cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('ultimo_backup_slot', ?)", (str(next_slot),))
+                                            conn.commit()
+                                        except Exception:
+                                            pass
+                            conn.close()
+                        except Exception as e_backup:
+                            print(f"Erro ao gerenciar backup nos slots: {e_backup}", flush=True)
                 except Exception as e:
                     print(f"Erro ao subir para o Drive: {e}", flush=True)
 
