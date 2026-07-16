@@ -2012,9 +2012,27 @@ with tab_ai:
     st.subheader("🤖 Analista de Manutenção Inteligente")
     st.caption("Parecer automatizado gerado por Inteligência Artificial (OpenAI) baseado em dados históricos reais.")
     
-    api_key = secret("OPENAI_API_KEY")
+    default_openai_key = secret("OPENAI_API_KEY") or ""
+    default_gemini_key = secret("GEMINI_API_KEY") or ""
+    
+    ai_provider = st.selectbox(
+        "🤖 Provedor de Inteligência Artificial",
+        ["Google Gemini (Grátis / Flash)", "OpenAI GPT-4o-mini"],
+        help="Selecione qual provedor de IA deseja usar. O Google Gemini possui uma cota de uso gratuita robusta."
+    )
+    
+    if ai_provider == "Google Gemini (Grátis / Flash)":
+        api_key = st.text_input("Chave de API do Gemini", type="password", value=default_gemini_key, placeholder="Cole sua API Key do Gemini (do Google AI Studio)")
+        provider_val = "gemini"
+    else:
+        api_key = st.text_input("Chave de API do OpenAI", type="password", value=default_openai_key, placeholder="Cole sua API Key do OpenAI")
+        provider_val = "openai"
+        
     if not api_key:
-        st.info("Para ativar o analista, insira uma chave de API válida no arquivo de secrets.")
+        st.info(
+            "Insira sua chave de API para habilitar o analista inteligente (ou configure-a nos secrets do Streamlit).\n\n"
+            "💡 **Dica:** Você pode obter uma chave do Gemini 100% gratuita no Google AI Studio (https://aistudio.google.com/)."
+        )
     elif not vehicles:
         st.info("Cadastre um veículo e registre manutenções/abastecimentos para poder rodar a IA.")
     else:
@@ -2053,7 +2071,8 @@ with tab_ai:
                         fuel_list,
                         mode=mode_val,
                         vehicles_list=vehicles,
-                        expenses=exp_list
+                        expenses=exp_list,
+                        provider=provider_val
                     )
                     
                     low_answer = answer.lower()

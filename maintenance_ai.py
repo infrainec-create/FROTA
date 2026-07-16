@@ -14,7 +14,8 @@ def analyze_maintenance(
     fuel: list[dict[str, Any]],
     mode: str = "general",
     vehicles_list: list[dict[str, Any]] | None = None,
-    expenses: list[dict[str, Any]] | None = None
+    expenses: list[dict[str, Any]] | None = None,
+    provider: str = "openai"
 ) -> str:
     """Gera um parecer de apoio ou previsão orçamentária; nunca toma decisões operacionais automaticamente."""
     if vehicle is None:
@@ -78,8 +79,18 @@ def analyze_maintenance(
                 "à decisão e não substitui a inspeção de um profissional qualificado.'"
             )
 
-    response = OpenAI(api_key=api_key).chat.completions.create(
-        model="gpt-4o-mini",
+    if provider == "gemini":
+        client = OpenAI(
+            api_key=api_key,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+        )
+        model_name = "gemini-1.5-flash"
+    else:
+        client = OpenAI(api_key=api_key)
+        model_name = "gpt-4o-mini"
+
+    response = client.chat.completions.create(
+        model=model_name,
         messages=[
             {
                 "role": "system",
