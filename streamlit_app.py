@@ -9,16 +9,6 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-import importlib
-import drive_repository
-st.write("DEBUG - TABLES:", list(drive_repository.TABLES.keys()))
-st.write("DEBUG - FILE PATH:", drive_repository.__file__)
-
-if "expenses" not in drive_repository.TABLES:
-    importlib.reload(drive_repository)
-    st.cache_resource.clear()
-    st.cache_data.clear()
-
 from drive_repository import DriveRepository
 from maintenance_ai import analyze_maintenance
 
@@ -41,6 +31,14 @@ def get_repository() -> DriveRepository:
 
 
 repo = get_repository()
+
+# Garantir que a instância em cache do repositório está atualizada
+try:
+    repo._validate_table("expenses")
+except ValueError:
+    st.cache_resource.clear()
+    st.cache_data.clear()
+    st.rerun()
 
 
 # 🔒 Password Hashing Helper
