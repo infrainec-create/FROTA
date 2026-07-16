@@ -647,7 +647,7 @@ def generate_executive_pdf_report(
         
     if clean_alerts:
         for alert in clean_alerts[:15]:
-            pdf.multi_cell(0, 5, f"- {norm(alert)}", border=0)
+            pdf.multi_cell(190, 5, f"- {norm(alert)}", border=0)
     else:
         pdf.set_font("helvetica", "", 9)
         pdf.cell(0, 6, "Nenhuma pendencia critica ou alerta de manutencao/documentacao ativo no periodo.", ln=True)
