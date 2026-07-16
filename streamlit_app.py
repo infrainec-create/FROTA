@@ -302,20 +302,8 @@ if st.sidebar.button("🚪 Sair do Sistema", use_container_width=True):
     st.session_state["username"] = ""
     st.rerun()
 
-st.sidebar.divider()
-
-theme_option = st.sidebar.selectbox(
-    "🌓 Tema da Interface",
-    ["Padrão do Dispositivo", "Escuro Premium", "Claro Soft"],
-    help="Escolha o estilo visual do sistema."
-)
-
 # Injected CSS based on Theme
 theme_css = ""
-if theme_option == "Escuro Premium":
-    theme_css = DARK_THEME_CSS
-elif theme_option == "Claro Soft":
-    theme_css = LIGHT_THEME_CSS
 
 st.markdown(f"""
 <style>
