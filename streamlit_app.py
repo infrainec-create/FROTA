@@ -9,6 +9,13 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+import importlib
+import drive_repository
+if "expenses" not in drive_repository.TABLES:
+    importlib.reload(drive_repository)
+    st.cache_resource.clear()
+    st.cache_data.clear()
+
 from drive_repository import DriveRepository
 from maintenance_ai import analyze_maintenance
 
