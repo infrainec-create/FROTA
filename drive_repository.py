@@ -132,6 +132,7 @@ class DriveRepository:
 
                     # Se o upload principal do frota.db deu certo, gerencia o backup rotativo nos slots do Drive
                     if uploaded_successfully:
+                        self._backup_local()
                         try:
                             # 1. Determina o próximo slot
                             ultimo_slot = 1
@@ -282,6 +283,34 @@ class DriveRepository:
         conn.commit()
         conn.close()
         self._upload_to_drive()
+
+    def _backup_local(self) -> None:
+        try:
+            backup_dir = "backups"
+            if not os.path.exists(backup_dir):
+                os.makedirs(backup_dir)
+
+            import glob
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_filename = f"frota_backup_{timestamp}.db"
+            dest_path = os.path.join(backup_dir, backup_filename)
+
+            conn_src = sqlite3.connect(self.db_path)
+            conn_dst = sqlite3.connect(dest_path)
+            with conn_dst:
+                conn_src.backup(conn_dst)
+            conn_dst.close()
+            conn_src.close()
+
+            backups_existentes = sorted(glob.glob(os.path.join(backup_dir, "frota_backup_*.db")))
+            if len(backups_existentes) > 5:
+                for b in backups_existentes[:-5]:
+                    try:
+                        os.remove(b)
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"Erro no backup local rotativo: {e}", flush=True)
 
     @staticmethod
     def _serialize(value: Any) -> str | int | float:

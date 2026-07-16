@@ -9,9 +9,21 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
+import plotly.express as px
 
 from drive_repository import DriveRepository
 from maintenance_ai import analyze_maintenance
+
+
+def apply_premium_chart_theme(fig):
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Source Sans Pro, Inter, sans-serif"),
+        xaxis=dict(gridcolor="rgba(128, 128, 128, 0.12)", zeroline=False),
+        yaxis=dict(gridcolor="rgba(128, 128, 128, 0.12)", zeroline=False),
+    )
+    return fig
 
 
 st.set_page_config(page_title="FrotaControl Pro", page_icon="🚚", layout="wide")
@@ -915,8 +927,24 @@ with tab_dashboard:
                     pass
         if costs_data:
             df_costs = pd.DataFrame(costs_data)
-            df_pivot = df_costs.pivot_table(index="Mês", columns="Categoria", values="Valor", aggfunc="sum").fillna(0)
-            st.bar_chart(df_pivot)
+            df_grouped = df_costs.groupby(["Mês", "Categoria"])["Valor"].sum().reset_index()
+            fig = px.bar(
+                df_grouped,
+                x="Mês",
+                y="Valor",
+                color="Categoria",
+                barmode="group",
+                text_auto=".2s",
+                labels={"Valor": "Custo (R$)"},
+                color_discrete_map={
+                    "Manutenção": "#10b981",
+                    "Abastecimento": "#3b82f6",
+                    "Outras Despesas": "#8b5cf6"
+                }
+            )
+            fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=350)
+            apply_premium_chart_theme(fig)
+            st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Ainda não há dados suficientes para gerar o gráfico de custos.")
 
@@ -926,7 +954,22 @@ with tab_dashboard:
             df_vehicles = pd.DataFrame(vehicles)
             status_counts = df_vehicles["status"].value_counts().reset_index()
             status_counts.columns = ["Status", "Quantidade"]
-            st.bar_chart(status_counts.set_index("Status"))
+            fig_status = px.pie(
+                status_counts,
+                names="Status",
+                values="Quantidade",
+                hole=0.4,
+                color="Status",
+                color_discrete_map={
+                    "Disponível": "#10b981",
+                    "Manutenção": "#f59e0b",
+                    "Em Uso": "#3b82f6",
+                    "Inativo": "#ef4444"
+                }
+            )
+            fig_status.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=350)
+            apply_premium_chart_theme(fig_status)
+            st.plotly_chart(fig_status, use_container_width=True)
         else:
             st.info("Cadastre veículos para ver o gráfico de status.")
 
@@ -976,7 +1019,17 @@ with tab_dashboard:
                     
         if total_monthly_costs:
             df_evo = pd.DataFrame(list(total_monthly_costs.items()), columns=["Mês", "Custo Total (R$)"]).sort_values(by="Mês")
-            st.line_chart(df_evo.set_index("Mês"))
+            fig_evo = px.line(
+                df_evo,
+                x="Mês",
+                y="Custo Total (R$)",
+                markers=True,
+                labels={"Custo Total (R$)": "Total (R$)"}
+            )
+            fig_evo.update_traces(line=dict(color="#0052cc", width=3), marker=dict(size=8, color="#0052cc"))
+            fig_evo.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=350)
+            apply_premium_chart_theme(fig_evo)
+            st.plotly_chart(fig_evo, use_container_width=True)
         else:
             st.info("Ainda não há dados suficientes para traçar a evolução de despesas.")
 
@@ -992,7 +1045,18 @@ with tab_dashboard:
             
         if v_costs and any(item["Gasto Total"] > 0 for item in v_costs):
             df_v_costs = pd.DataFrame(v_costs).sort_values(by="Gasto Total", ascending=False).head(5)
-            st.bar_chart(df_v_costs.set_index("Veículo"))
+            fig_v_costs = px.bar(
+                df_v_costs,
+                x="Veículo",
+                y="Gasto Total",
+                text_auto=".2s",
+                color="Gasto Total",
+                color_continuous_scale="Blues",
+                labels={"Gasto Total": "Gasto (R$)"}
+            )
+            fig_v_costs.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=350, coloraxis_showscale=False)
+            apply_premium_chart_theme(fig_v_costs)
+            st.plotly_chart(fig_v_costs, use_container_width=True)
         else:
             st.info("Ainda não há gastos registrados para os veículos ativos no período.")
 
@@ -1997,7 +2061,7 @@ with tab_settings:
             with open(db_path, "rb") as f:
                 db_bytes = f.read()
             st.download_button(
-                label="📥 Baixar Banco de Dados (SQLite)",
+                label="📥 Baixar Banco de Dados Atual (SQLite)",
                 data=db_bytes,
                 file_name=f"backup_frota_{datetime.today().strftime('%Y-%m-%d')}.db",
                 mime="application/x-sqlite3",
@@ -2007,6 +2071,41 @@ with tab_settings:
             st.error(f"Erro ao ler banco de dados: {e}")
     else:
         st.info("Arquivo de banco de dados local não encontrado.")
+
+    st.divider()
+    st.markdown("##### 💾 Histórico de Backups Locais (Rotativos)")
+    st.caption("O sistema mantém automaticamente os 5 backups locais mais recentes no disco do servidor para segurança contra falhas.")
+    backup_dir = "backups"
+    if os.path.exists(backup_dir):
+        import glob
+        local_backups = sorted(glob.glob(os.path.join(backup_dir, "frota_backup_*.db")), reverse=True)
+        if local_backups:
+            for i, b_path in enumerate(local_backups[:5]):
+                b_name = os.path.basename(b_path)
+                try:
+                    b_size = os.path.getsize(b_path) / 1024
+                    b_time = datetime.fromtimestamp(os.path.getmtime(b_path)).strftime('%d/%m/%Y %H:%M:%S')
+                    
+                    col_b1, col_b2 = st.columns([3, 1])
+                    with col_b1:
+                        st.markdown(f"📄 **{b_name}** ({b_size:.1f} KB)  \n*Gerado em: {b_time}*")
+                    with col_b2:
+                        with open(b_path, "rb") as f:
+                            b_bytes = f.read()
+                        st.download_button(
+                            label="📥 Download",
+                            data=b_bytes,
+                            file_name=b_name,
+                            mime="application/x-sqlite3",
+                            key=f"dl_local_backup_{i}",
+                            use_container_width=True
+                        )
+                except Exception:
+                    pass
+        else:
+            st.info("Nenhum backup local rotativo gerado ainda. Ele será gerado na próxima alteração de dados.")
+    else:
+        st.info("Nenhum backup local rotativo gerado ainda. Ele será gerado na próxima alteração de dados.")
 
 with tab_ai:
     st.subheader("🤖 Analista de Manutenção Inteligente")
