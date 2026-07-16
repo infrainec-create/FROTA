@@ -69,10 +69,39 @@ if st.session_state["authenticated"]:
             st.rerun()
     st.session_state["last_activity"] = time.time()
 
+# Core CSS variables override for Theme configurations
+DARK_THEME_CSS = """
+    :root {
+        --primary-color: #0b7285 !important;
+        --background-color: #0b0f19 !important;
+        --secondary-background-color: #111827 !important;
+        --text-color: #f3f4f6 !important;
+
+        --style-primary-color: #0b7285 !important;
+        --style-background-color: #0b0f19 !important;
+        --style-secondary-background-color: #111827 !important;
+        --style-text-color: #f3f4f6 !important;
+    }
+"""
+
+LIGHT_THEME_CSS = """
+    :root {
+        --primary-color: #0b7285 !important;
+        --background-color: #ffffff !important;
+        --secondary-background-color: #f8fafc !important;
+        --text-color: #0f172a !important;
+
+        --style-primary-color: #0b7285 !important;
+        --style-background-color: #ffffff !important;
+        --style-secondary-background-color: #f8fafc !important;
+        --style-text-color: #0f172a !important;
+    }
+"""
+
 if not st.session_state["authenticated"]:
     st.markdown(f"""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght=300;400;500;600;700&display=swap');
     html, body, [class*="css"] {{
         font-family: 'Plus Jakarta Sans', sans-serif;
     }}
@@ -92,6 +121,12 @@ if not st.session_state["authenticated"]:
     .login-subtitle {{
         font-size: 0.85rem;
         margin-bottom: 1.5rem;
+    }}
+    @media (prefers-color-scheme: dark) {{
+        {DARK_THEME_CSS}
+    }}
+    @media (prefers-color-scheme: light) {{
+        {LIGHT_THEME_CSS}
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -266,12 +301,33 @@ if st.sidebar.button("🚪 Sair do Sistema", use_container_width=True):
 
 st.sidebar.divider()
 
+theme_option = st.sidebar.selectbox(
+    "🌓 Tema da Interface",
+    ["Padrão do Dispositivo", "Escuro Premium"],
+    help="Escolha o estilo visual do sistema."
+)
+
+# Injected CSS based on Theme
+theme_css = ""
+if theme_option == "Escuro Premium":
+    theme_css = DARK_THEME_CSS
+else:  # Padrão do Dispositivo
+    theme_css = f"""
+    @media (prefers-color-scheme: dark) {{
+        {DARK_THEME_CSS}
+    }}
+    @media (prefers-color-scheme: light) {{
+        {LIGHT_THEME_CSS}
+    }}
+    """
+
 st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
 html, body, [class*="css"] {{
     font-family: 'Plus Jakarta Sans', sans-serif;
 }}
+{theme_css}
 /* Card designs */
 .kpi-card {{
     background: rgba(128, 128, 128, 0.05);
