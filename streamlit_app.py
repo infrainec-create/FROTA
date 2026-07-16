@@ -530,6 +530,138 @@ def generate_pdf_report(table_name: str, df: pd.DataFrame) -> bytes:
     return bytes(pdf.output())
 
 
+def generate_executive_pdf_report(
+    period_label: str,
+    kpis: dict[str, Any],
+    metrics_list: list[dict[str, Any]],
+    alerts_list: list[str],
+    top_vehicles: list[dict[str, Any]]
+) -> bytes:
+    from fpdf import FPDF
+    import unicodedata
+
+    class ExecutivePDF(FPDF):
+        def header(self):
+            self.set_font("helvetica", "B", 14)
+            self.cell(0, 10, "FROTA CONTROL PRO - RELATORIO GERENCIAL EXECUTIVO", ln=True, align="C")
+            self.set_draw_color(0, 82, 204)
+            self.set_line_width(1)
+            self.line(10, self.get_y(), 200, self.get_y())
+            self.ln(10)
+
+        def footer(self):
+            self.set_y(-15)
+            self.set_font("helvetica", "I", 8)
+            self.cell(0, 10, f"Pagina {self.page_no()}/{{nb}}", align="C")
+
+    pdf = ExecutivePDF()
+    pdf.alias_nb_pages()
+    pdf.add_page()
+    
+    def norm(txt):
+        return unicodedata.normalize("NFKD", str(txt)).encode("ascii", "ignore").decode("ascii")
+
+    pdf.set_font("helvetica", "B", 11)
+    pdf.cell(0, 8, f"PERIODO DE REFERENCIA: {norm(period_label).upper()}", ln=True)
+    pdf.set_font("helvetica", "", 9)
+    pdf.cell(0, 5, f"Data de Emissao: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", ln=True)
+    pdf.ln(5)
+
+    # 1. KPIs Financieros
+    pdf.set_font("helvetica", "B", 10)
+    pdf.set_fill_color(240, 242, 246)
+    pdf.cell(0, 7, "1. RESUMO FINANCEIRO DA FROTA", ln=True, fill=True)
+    pdf.ln(2)
+    pdf.set_font("helvetica", "", 9)
+    
+    financials = [
+        ("Abastecimento", f"R$ {kpis.get('fuel', 0.0):,.2f}"),
+        ("Manutencao", f"R$ {kpis.get('maint', 0.0):,.2f}"),
+        ("Multas e Infracoes", f"R$ {kpis.get('fines', 0.0):,.2f}"),
+        ("Outras Despesas", f"R$ {kpis.get('expenses', 0.0):,.2f}"),
+        ("CUSTO TOTAL DO PERIODO", f"R$ {kpis.get('total', 0.0):,.2f}")
+    ]
+    
+    for label, val in financials:
+        if "TOTAL" in label:
+            pdf.set_font("helvetica", "B", 9)
+        pdf.cell(100, 6, norm(label), border=1)
+        pdf.cell(90, 6, val, border=1, ln=True, align="R")
+        pdf.set_font("helvetica", "", 9)
+    pdf.ln(6)
+
+    # 2. Desempenho e Eficiência
+    pdf.set_font("helvetica", "B", 10)
+    pdf.cell(0, 7, "2. METRICAS DE DESEMPENHO E EFICIENCIA", ln=True, fill=True)
+    pdf.ln(2)
+    pdf.set_font("helvetica", "", 9)
+    
+    total_km = sum(as_number(m.get("km_raw")) for m in metrics_list)
+    total_liters = sum(as_number(m.get("liters_raw")) for m in metrics_list)
+    avg_kml = total_km / total_liters if total_liters > 0 else 0.0
+    cost_per_km = kpis.get('total', 0.0) / total_km if total_km > 0 else 0.0
+    
+    eff_metrics = [
+        ("Total de Veiculos Ativos", f"{kpis.get('active_vehicles', 0)} veiculos"),
+        ("Kilometragem Total Rodada", f"{total_km:,.1f} km"),
+        ("Litros de Combustivel Consumidos", f"{total_liters:,.1f} L"),
+        ("Rendimento Medio da Frota", f"{avg_kml:.2f} km/L" if avg_kml > 0 else "N/A"),
+        ("Custo Medio por KM Rodado", f"R$ {cost_per_km:.2f}/km" if cost_per_km > 0 else "N/A")
+    ]
+    
+    for label, val in eff_metrics:
+        pdf.cell(100, 6, norm(label), border=1)
+        pdf.cell(90, 6, val, border=1, ln=True, align="R")
+    pdf.ln(6)
+
+    # 3. Top Veículos mais Caros
+    pdf.set_font("helvetica", "B", 10)
+    pdf.cell(0, 7, "3. VEICULOS COM MAIORES DESPESAS NO PERIODO", ln=True, fill=True)
+    pdf.ln(2)
+    pdf.set_font("helvetica", "B", 8)
+    pdf.set_fill_color(0, 82, 204)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(100, 6, "VEICULO", border=1, fill=True)
+    pdf.cell(90, 6, "GASTO TOTAL NO PERIODO", border=1, fill=True, ln=True, align="R")
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font("helvetica", "", 9)
+    
+    top_5_sorted = sorted(top_vehicles, key=lambda x: x.get("Gasto Total", 0), reverse=True)[:5]
+    for item in top_5_sorted:
+        v_label = item.get("Veículo", "Desconhecido")
+        v_cost = item.get("Gasto Total", 0.0)
+        pdf.cell(100, 6, norm(v_label), border=1)
+        pdf.cell(90, 6, f"R$ {v_cost:,.2f}", border=1, ln=True, align="R")
+    pdf.ln(6)
+
+    # 4. Alertas e Pendências Operacionais
+    pdf.set_font("helvetica", "B", 10)
+    pdf.cell(0, 7, "4. ALERTAS E PENDENCIAS OPERACIONAIS ATIVAS", ln=True, fill=True)
+    pdf.ln(2)
+    pdf.set_font("helvetica", "", 8)
+    
+    clean_alerts = []
+    for a in alerts_list:
+        clean_a = a.replace("**", "").replace("🔴", "[CRITICO]").replace("⚠️", "[ALERTA]").replace("🔧", "[MANUTENCAO]")
+        clean_alerts.append(clean_a)
+        
+    if clean_alerts:
+        for alert in clean_alerts[:15]:
+            pdf.multi_cell(0, 5, f"- {norm(alert)}", border=0)
+    else:
+        pdf.set_font("helvetica", "", 9)
+        pdf.cell(0, 6, "Nenhuma pendencia critica ou alerta de manutencao/documentacao ativo no periodo.", ln=True)
+        
+    pdf.ln(10)
+    
+    pdf.ln(15)
+    pdf.set_font("helvetica", "B", 9)
+    pdf.cell(0, 5, "________________________________________________________", ln=True, align="C")
+    pdf.cell(0, 5, "ASSINATURA DO GESTOR DA FROTA", ln=True, align="C")
+    
+    return bytes(pdf.output())
+
+
 # Rest of streamlit app logic starts here...
 st.caption("Gestão avançada de frotas com banco SQL de alta performance (SQLite / Google Drive Sync)")
 
@@ -851,7 +983,9 @@ with tab_dashboard:
             "Combustível": f"{liters:,.1f} L",
             "Média Consumo": f"{kml:.2f} km/L" if kml > 0 else "-",
             "Custo Total": f"R$ {total_v_cost:,.2f}",
-            "Custo por KM": f"R$ {cost_km:.2f}/km" if cost_km > 0 else "-"
+            "Custo por KM": f"R$ {cost_km:.2f}/km" if cost_km > 0 else "-",
+            "km_raw": km_run,
+            "liters_raw": liters
         })
         
     if metrics_rows:
@@ -1059,6 +1193,43 @@ with tab_dashboard:
             st.plotly_chart(fig_v_costs, use_container_width=True)
         else:
             st.info("Ainda não há gastos registrados para os veículos ativos no período.")
+
+    # 📋 RELATÓRIO GERENCIAL EXECUTIVO PARA GESTORES
+    st.divider()
+    st.markdown("### 📋 Relatório Gerencial Executivo de Tomada de Decisão")
+    st.caption("Gere e exporte um documento PDF consolidado contendo o resumo financeiro de despesas, métricas de eficiência de combustível, rankings de custos e todos os alertas operacionais do período selecionado para envio à diretoria e gestores.")
+    
+    period_label = f"{selected_month_name} / {selected_year}"
+    kpis_pdf = {
+        "fuel": total_fuel,
+        "maint": total_maint,
+        "fines": total_fines,
+        "expenses": total_expenses,
+        "total": total_cost,
+        "active_vehicles": len(vehicles)
+    }
+    
+    # Junta todos os alertas gerados no Dashboard
+    all_current_alerts = alerts + (consumption_alerts if 'consumption_alerts' in locals() else [])
+    
+    try:
+        pdf_exec_data = generate_executive_pdf_report(
+            period_label=period_label,
+            kpis=kpis_pdf,
+            metrics_list=metrics_rows,
+            alerts_list=all_current_alerts,
+            top_vehicles=v_costs
+        )
+        
+        st.download_button(
+            label="📥 Gerar Relatório Executivo Consolidado (PDF)",
+            data=pdf_exec_data,
+            file_name=f"relatorio_gerencial_executivo_{selected_month_name.lower()}_{selected_year}.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
+    except Exception as e_exec_pdf:
+        st.error(f"Erro ao preparar o relatório executivo: {e_exec_pdf}")
 
 with tab_vehicles:
     st.subheader("Gerenciamento de Cadastro")
