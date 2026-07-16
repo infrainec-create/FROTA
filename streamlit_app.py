@@ -11,6 +11,9 @@ import streamlit as st
 
 import importlib
 import drive_repository
+st.write("DEBUG - TABLES:", list(drive_repository.TABLES.keys()))
+st.write("DEBUG - FILE PATH:", drive_repository.__file__)
+
 if "expenses" not in drive_repository.TABLES:
     importlib.reload(drive_repository)
     st.cache_resource.clear()
