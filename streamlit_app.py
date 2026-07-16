@@ -393,18 +393,18 @@ html, body, [class*="css"] {{
     margin-bottom: 0.8rem;
 }}
 /* Alinha os botões principais para padrão premium */
-.stButton>button {
+.stButton>button {{
     border-radius: 12px;
     font-weight: 600;
     height: 3.2em;
     width: 100%;
     margin-top: 10px;
     transition: all 0.2s ease-in-out;
-}
-.stButton>button:hover {
+}}
+.stButton>button:hover {{
     transform: translateY(-2px);
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-}
+}}
 </style>
 """, unsafe_allow_html=True)
 
