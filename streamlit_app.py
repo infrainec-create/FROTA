@@ -442,6 +442,8 @@ def safe_dataframe(data: list[dict[str, Any]], columns: list[str]) -> pd.DataFra
 def generate_pdf_report(table_name: str, df: pd.DataFrame) -> bytes:
     from fpdf import FPDF
     
+    import unicodedata
+    
     class PremiumPDF(FPDF):
         def header(self):
             self.set_font("helvetica", "B", 14)
@@ -460,7 +462,19 @@ def generate_pdf_report(table_name: str, df: pd.DataFrame) -> bytes:
     pdf.alias_nb_pages()
     pdf.add_page()
     pdf.set_font("helvetica", "B", 12)
-    pdf.cell(0, 10, f"Tabela de Origem: {table_name.upper()}", ln=True)
+    
+    table_translations = {
+        "vehicles": "Veículos",
+        "maintenance": "Manutenção",
+        "fuel": "Abastecimento",
+        "drivers": "Motoristas",
+        "checkins": "Check-ins",
+        "fines": "Multas"
+    }
+    translated_table = table_translations.get(table_name, table_name)
+    translated_table_clean = unicodedata.normalize("NFKD", translated_table).encode("ascii", "ignore").decode("ascii")
+    
+    pdf.cell(0, 10, f"Tabela de Origem: {translated_table_clean.upper()}", ln=True)
     pdf.set_font("helvetica", "", 9)
     pdf.cell(0, 5, f"Data de Emissao: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", ln=True)
     pdf.cell(0, 5, f"Total de Registros: {len(df)}", ln=True)
@@ -478,7 +492,9 @@ def generate_pdf_report(table_name: str, df: pd.DataFrame) -> bytes:
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("helvetica", "B", 8)
     for col in cols_to_show:
-        pdf.cell(col_width, 8, str(col).upper(), border=1, fill=True, align="C")
+        col_str = str(col).upper()
+        col_str = unicodedata.normalize("NFKD", col_str).encode("ascii", "ignore").decode("ascii")
+        pdf.cell(col_width, 8, col_str, border=1, fill=True, align="C")
     pdf.ln()
 
     # Table Rows
@@ -495,7 +511,7 @@ def generate_pdf_report(table_name: str, df: pd.DataFrame) -> bytes:
         for col in cols_to_show:
             val = str(row.get(col, ""))
             # Remove any special unicode chars to avoid FPDF character errors
-            val = val.encode("ascii", "ignore").decode("ascii")
+            val = unicodedata.normalize("NFKD", val).encode("ascii", "ignore").decode("ascii")
             if len(val) > 25:
                 val = val[:22] + "..."
             pdf.cell(col_width, 8, val, border=1, fill=True, align="C")
@@ -1471,7 +1487,19 @@ with tab_fines:
 with tab_reports:
     st.subheader("📑 Central de Relatórios com Filtros Dinâmicos")
     
-    report_name = st.selectbox("Selecione a tabela de dados", ["vehicles", "maintenance", "fuel", "drivers", "checkins", "fines"])
+    table_options = {
+        "vehicles": "Veículos",
+        "maintenance": "Manutenção",
+        "fuel": "Abastecimento",
+        "drivers": "Motoristas",
+        "checkins": "Check-ins",
+        "fines": "Multas"
+    }
+    report_name = st.selectbox(
+        "Selecione a tabela de dados",
+        options=list(table_options.keys()),
+        format_func=lambda x: table_options[x]
+    )
     data = rows(report_name)
     
     if data:
@@ -1489,6 +1517,10 @@ with tab_reports:
                 v_filter = st.selectbox("Filtrar por Veículo", ["Todos"] + list(v_dict.values()))
                 if v_filter != "Todos":
                     filtered_df = filtered_df[filtered_df["Nome Veículo"] == v_filter]
+                    
+        if "driver_id" in df_report.columns and drivers:
+            d_dict = {d["id"]: d["name"] for d in drivers}
+            filtered_df["Nome Motorista"] = filtered_df["driver_id"].map(d_dict).fillna("Motorista Excluído")
                     
         date_col = next((c for c in ["maint_date", "fuel_date", "checkin_at", "fine_date", "created_at"] if c in df_report.columns), None)
         if date_col:
@@ -1523,12 +1555,58 @@ with tab_reports:
                 total_sum = filtered_df[cost_col].apply(as_number).sum()
                 st.metric("Custo Total Filtrado", f"R$ {total_sum:,.2f}")
                 
+        # Preparação do DataFrame traduzido para visualização e exportação
+        cols_to_drop = ["id", "vehicle_id", "driver_id", "created_at", "updated_at"]
+        
+        column_translations = {
+            "name": "Nome",
+            "plate": "Placa",
+            "year": "Ano",
+            "status": "Situação",
+            "ipva_expiry": "Vencimento IPVA",
+            "insurance_expiry": "Vencimento Seguro",
+            "phone": "Telefone",
+            "license": "CNH",
+            "license_expiry": "Vencimento CNH",
+            "maint_date": "Data da Manutenção",
+            "maint_type": "Tipo de Manutenção",
+            "description": "Descrição",
+            "cost": "Custo (R$)",
+            "odometer": "Odômetro",
+            "liters": "Litros",
+            "fuel_date": "Data do Abastecimento",
+            "checkin_at": "Data Saída",
+            "checkout_at": "Data Retorno",
+            "odometer_start": "Odômetro Inicial",
+            "odometer_end": "Odômetro Final",
+            "destination": "Destino",
+            "notes": "Observações",
+            "fine_date": "Data da Infração",
+            "amount": "Valor da Multa",
+            "Nome Veículo": "Veículo",
+            "Nome Motorista": "Motorista"
+        }
+        
+        display_df = filtered_df.drop(columns=[c for c in cols_to_drop if c in filtered_df.columns], errors='ignore')
+        display_df = display_df.rename(columns=column_translations)
+        
+        # Reordenar colunas para colocar Veículo e Motorista na frente, se existirem
+        cols_order = []
+        if "Veículo" in display_df.columns:
+            cols_order.append("Veículo")
+        if "Motorista" in display_df.columns:
+            cols_order.append("Motorista")
+        for c in display_df.columns:
+            if c not in cols_order:
+                cols_order.append(c)
+        display_df = display_df[cols_order]
+
         st.divider()
-        st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
         
         down_col1, down_col2 = st.columns(2)
         with down_col1:
-            csv_data = filtered_df.to_csv(index=False).encode("utf-8-sig")
+            csv_data = display_df.to_csv(index=False).encode("utf-8-sig")
             st.download_button(
                 "📥 Baixar Relatório (CSV)", 
                 csv_data, 
@@ -1538,7 +1616,7 @@ with tab_reports:
             )
         with down_col2:
             try:
-                pdf_data = generate_pdf_report(report_name, filtered_df)
+                pdf_data = generate_pdf_report(report_name, display_df)
                 st.download_button(
                     "📄 Baixar Relatório (PDF)", 
                     pdf_data, 
