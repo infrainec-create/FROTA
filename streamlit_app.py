@@ -131,12 +131,6 @@ if not st.session_state["authenticated"]:
         font-size: 0.85rem;
         margin-bottom: 1.5rem;
     }}
-    @media (prefers-color-scheme: dark) {{
-        {DARK_THEME_CSS}
-    }}
-    @media (prefers-color-scheme: light) {{
-        {LIGHT_THEME_CSS}
-    }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -320,15 +314,6 @@ theme_option = st.sidebar.selectbox(
 theme_css = ""
 if theme_option == "Escuro Premium":
     theme_css = DARK_THEME_CSS
-else:  # Padrão do Dispositivo
-    theme_css = f"""
-    @media (prefers-color-scheme: dark) {{
-        {DARK_THEME_CSS}
-    }}
-    @media (prefers-color-scheme: light) {{
-        {LIGHT_THEME_CSS}
-    }}
-    """
 
 st.markdown(f"""
 <style>
