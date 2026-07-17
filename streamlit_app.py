@@ -123,34 +123,230 @@ if not st.session_state["authenticated"]:
     st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght=300;400;500;600;700&display=swap');
-    html, body, [class*="css"] {{
-        font-family: 'Plus Jakarta Sans', sans-serif;
+    
+    /* Global Font styling */
+    html, body, [class*="css"], [data-testid="stAppViewContainer"] {{
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
     }}
+    
+    /* Hide top Streamlit UI for cleaner appearance */
+    header[data-testid="stHeader"] {{
+        display: none !important;
+    }}
+    footer {{
+        display: none !important;
+    }}
+    
+    /* Elegant app container background */
+    div[data-testid="stAppViewContainer"] {{
+        background: radial-gradient(circle at 10% 20%, rgba(216, 241, 230, 0.45) 0.1%, rgba(233, 226, 226, 0.28) 90.1%) !important;
+    }}
+    
+    @media (prefers-color-scheme: dark) {{
+        div[data-testid="stAppViewContainer"] {{
+            background: radial-gradient(circle at 24.1% 68.8%, rgb(20, 24, 38) 0%, rgb(11, 13, 21) 99.4%) !important;
+        }}
+    }}
+    
+    /* Centered layout for login page */
+    .block-container {{
+        max-width: 480px !important;
+        padding: 4rem 1.5rem !important;
+        margin: auto !important;
+    }}
+    
+    /* Glassmorphic Login Header */
     .login-box {{
-        max-width: 480px;
-        margin: 60px auto 20px auto;
-        padding: 2.5rem;
-        border-radius: 20px;
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
         text-align: center;
+        margin-bottom: 2rem;
+    }}
+    .logo-icon {{
+        font-size: 3.5rem;
+        margin-bottom: 0.75rem;
+        display: inline-block;
+        filter: drop-shadow(0 10px 15px rgba(37, 99, 235, 0.2));
+        animation: float 6s ease-in-out infinite;
+    }}
+    @keyframes float {{
+        0% {{ transform: translateY(0px) rotate(0deg); }}
+        50% {{ transform: translateY(-8px) rotate(3deg); }}
+        100% {{ transform: translateY(0px) rotate(0deg); }}
     }}
     .login-title {{
-        font-size: 1.8rem;
-        font-weight: 700;
-        margin-bottom: 0.2rem;
+        font-size: 2.2rem;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.3rem;
+    }}
+    @media (prefers-color-scheme: dark) {{
+        .login-title {{
+            background: linear-gradient(135deg, #60a5fa 0%, #93c5fd 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }}
     }}
     .login-subtitle {{
-        font-size: 0.85rem;
-        margin-bottom: 1.5rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+        color: #4b5563;
+    }}
+    @media (prefers-color-scheme: dark) {{
+        .login-subtitle {{
+            color: #9ca3af;
+        }}
+    }}
+    
+    /* Streamlit Form Overrides (The Card) */
+    div[data-testid="stForm"] {{
+        background-color: var(--secondary-background-color) !important;
+        border: 1px solid rgba(128, 128, 128, 0.15) !important;
+        border-radius: 24px !important;
+        padding: 2.5rem 2rem !important;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.02) !important;
+        transition: all 0.3s ease !important;
+    }}
+    @media (prefers-color-scheme: dark) {{
+        div[data-testid="stForm"] {{
+            background-color: rgba(30, 41, 59, 0.45) !important;
+            backdrop-filter: blur(16px) !important;
+            -webkit-backdrop-filter: blur(16px) !important;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4) !important;
+        }}
+    }}
+    
+    /* Remove default streamlit form borders */
+    div[data-testid="stForm"] > div {{
+        border: none !important;
+        padding: 0 !important;
+    }}
+    
+    /* Segmented Control Tabs styling */
+    div[data-testid="stTabs"] {{
+        background: rgba(0, 0, 0, 0.03) !important;
+        padding: 5px !important;
+        border-radius: 14px !important;
+        margin-bottom: 2rem !important;
+        border: 1px solid rgba(0, 0, 0, 0.02) !important;
+    }}
+    @media (prefers-color-scheme: dark) {{
+        div[data-testid="stTabs"] {{
+            background: rgba(255, 255, 255, 0.04) !important;
+            border: 1px solid rgba(255, 255, 255, 0.02) !important;
+        }}
+    }}
+    
+    button[data-testid="stTab"] {{
+        flex: 1 !important;
+        text-align: center !important;
+        border-radius: 10px !important;
+        border: none !important;
+        padding: 8px 12px !important;
+        font-weight: 600 !important;
+        color: #6b7280 !important;
+        background: transparent !important;
+        transition: all 0.2s ease !important;
+        font-size: 0.85rem !important;
+        height: auto !important;
+    }}
+    @media (prefers-color-scheme: dark) {{
+        button[data-testid="stTab"] {{
+            color: #9ca3af !important;
+        }}
+    }}
+    
+    button[data-testid="stTab"][aria-selected="true"] {{
+        background: #ffffff !important;
+        color: #2563eb !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05) !important;
+    }}
+    @media (prefers-color-scheme: dark) {{
+        button[data-testid="stTab"][aria-selected="true"] {{
+            background: #1e293b !important;
+            color: #3b82f6 !important;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+        }}
+    }}
+    
+    /* Hide the orange indicator bar */
+    button[data-testid="stTab"] div[data-baseweb="tab-highlight"] {{
+        display: none !important;
+    }}
+    div[data-testid="stTabs"] div[role="tablist"]::after {{
+        display: none !important;
+    }}
+    
+    /* Modern Text Inputs & Selectboxes */
+    div[data-testid="stTextInput"] label, div[data-testid="stSelectbox"] label {{
+        font-size: 0.85rem !important;
+        font-weight: 600 !important;
+        color: var(--text-color) !important;
+        opacity: 0.85 !important;
+        margin-bottom: 0.4rem !important;
+    }}
+    
+    div[data-baseweb="input"] {{
+        border-radius: 12px !important;
+        border: 1px solid rgba(148, 163, 184, 0.25) !important;
+        background-color: var(--background-color) !important;
+        transition: all 0.2s ease !important;
+        padding: 2px 6px !important;
+    }}
+    div[data-baseweb="input"]:focus-within {{
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18) !important;
+    }}
+    
+    div[data-baseweb="select"] > div {{
+        border-radius: 12px !important;
+        border: 1px solid rgba(148, 163, 184, 0.25) !important;
+        background-color: var(--background-color) !important;
+        transition: all 0.2s ease !important;
+    }}
+    
+    /* Primary Button with Gradient and Hover Lift */
+    div.stButton > button {{
+        width: 100% !important;
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+        color: #ffffff !important;
+        border-radius: 12px !important;
+        padding: 0.7rem 1.5rem !important;
+        font-size: 0.95rem !important;
+        font-weight: 600 !important;
+        border: none !important;
+        box-shadow: 0 6px 15px rgba(37, 99, 235, 0.25) !important;
+        transition: all 0.2s ease !important;
+    }}
+    div.stButton > button:hover {{
+        transform: translateY(-1px) !important;
+        box-shadow: 0 10px 20px rgba(37, 99, 235, 0.35) !important;
+        background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%) !important;
+    }}
+    div.stButton > button:active {{
+        transform: translateY(1px) !important;
+    }}
+    
+    /* Rounded Alert Messages */
+    div[data-testid="stNotification"] {{
+        border-radius: 12px !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05) !important;
+    }}
+    
+    /* Custom spacing and typography improvements */
+    .stMarkdown p {{
+        font-size: 0.9rem !important;
     }}
     </style>
     """, unsafe_allow_html=True)
 
-    
     st.markdown("""
     <div class="login-box">
-        <div class="login-title">🚚 FrotaControl Pro</div>
-        <div class="login-subtitle">Sistema Gerencial de Frotas</div>
+        <div class="logo-icon">🚚</div>
+        <div class="login-title">FrotaControl Pro</div>
+        <div class="login-subtitle">Gestão Inteligente de Frotas</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -199,96 +395,95 @@ if not st.session_state["authenticated"]:
                     st.rerun()
         st.stop()
 
-    col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
-    with col_l2:
-        auth_mode = st.tabs(["🔑 Entrar", "➕ Nova Conta", "🩹 Recuperar Acesso"])
-        
-        with auth_mode[0]:
-            with st.form("login_form"):
-                user = st.text_input("Usuário")
-                passwd = st.text_input("Senha", type="password")
-                if st.form_submit_button("Entrar", type="primary", use_container_width=True):
-                    matched = next((u for u in users_list if u["username"] == user.strip()), None)
-                    if matched and matched["password"] == hash_password(passwd):
-                        st.session_state["authenticated"] = True
-                        st.session_state["username"] = matched["username"]
-                        st.session_state["login_attempts"] = 0
+    # Center card without columns
+    auth_mode = st.tabs(["🔑 Entrar", "➕ Nova Conta", "🩹 Recuperar Acesso"])
+    
+    with auth_mode[0]:
+        with st.form("login_form"):
+            user = st.text_input("Usuário")
+            passwd = st.text_input("Senha", type="password")
+            if st.form_submit_button("Entrar", type="primary", use_container_width=True):
+                matched = next((u for u in users_list if u["username"] == user.strip()), None)
+                if matched and matched["password"] == hash_password(passwd):
+                    st.session_state["authenticated"] = True
+                    st.session_state["username"] = matched["username"]
+                    st.session_state["login_attempts"] = 0
+                    st.rerun()
+                else:
+                    st.session_state["login_attempts"] += 1
+                    if st.session_state["login_attempts"] >= 5:
+                        st.session_state["lockout_time"] = time.time()
+                        st.error("⚠️ Muitas tentativas incorretas. Conta bloqueada por 60 segundos.")
                         st.rerun()
                     else:
-                        st.session_state["login_attempts"] += 1
-                        if st.session_state["login_attempts"] >= 5:
-                            st.session_state["lockout_time"] = time.time()
-                            st.error("⚠️ Muitas tentativas incorretas. Conta bloqueada por 60 segundos.")
-                            st.rerun()
-                        else:
-                            st.error(f"Usuário ou senha incorretos. Tentativa {st.session_state['login_attempts']}/5.")
-                        
-        with auth_mode[1]:
-            st.caption("Cadastre novas contas de operadores ou administradores.")
-            with st.form("register_form"):
-                reg_code = st.text_input("Código de Convite (ACCESS_PASSWORD nos segredos)", type="password")
-                reg_name = st.text_input("Nome Completo")
-                reg_user = st.text_input("Nome de Usuário")
-                reg_pass = st.text_input("Senha", type="password")
-                reg_pass_confirm = st.text_input("Confirme a Senha", type="password")
-                reg_question = st.selectbox(
-                    "Pergunta de Segurança",
-                    [
-                        "Qual o nome da sua mãe?",
-                        "Qual o nome do seu primeiro animal de estimação?",
-                        "Em qual cidade você nasceu?",
-                        "Qual o modelo do seu primeiro carro?"
-                    ],
-                    key="reg_q"
-                )
-                reg_answer = st.text_input("Resposta de Segurança", key="reg_a").strip().lower()
-                
-                if st.form_submit_button("Criar Conta", type="primary", use_container_width=True):
-                    invite_code = secret("ACCESS_PASSWORD", "admin123")
-                    if reg_code != invite_code:
-                        st.error("Código de convite inválido.")
-                    elif not reg_name.strip() or not reg_user.strip() or not reg_pass or not reg_answer.strip():
-                        st.error("Preencha todos os campos obrigatórios.")
-                    elif reg_pass != reg_pass_confirm:
+                        st.error(f"Usuário ou senha incorretos. Tentativa {st.session_state['login_attempts']}/5.")
+                    
+    with auth_mode[1]:
+        st.caption("Cadastre novas contas de operadores ou administradores.")
+        with st.form("register_form"):
+            reg_code = st.text_input("Código de Convite (ACCESS_PASSWORD nos segredos)", type="password")
+            reg_name = st.text_input("Nome Completo")
+            reg_user = st.text_input("Nome de Usuário")
+            reg_pass = st.text_input("Senha", type="password")
+            reg_pass_confirm = st.text_input("Confirme a Senha", type="password")
+            reg_question = st.selectbox(
+                "Pergunta de Segurança",
+                [
+                    "Qual o nome da sua mãe?",
+                    "Qual o nome do seu primeiro animal de estimação?",
+                    "Em qual cidade você nasceu?",
+                    "Qual o modelo do seu primeiro carro?"
+                ],
+                key="reg_q"
+            )
+            reg_answer = st.text_input("Resposta de Segurança", key="reg_a").strip().lower()
+            
+            if st.form_submit_button("Criar Conta", type="primary", use_container_width=True):
+                invite_code = secret("ACCESS_PASSWORD", "admin123")
+                if reg_code != invite_code:
+                    st.error("Código de convite inválido.")
+                elif not reg_name.strip() or not reg_user.strip() or not reg_pass or not reg_answer.strip():
+                    st.error("Preencha todos os campos obrigatórios.")
+                elif reg_pass != reg_pass_confirm:
+                    st.error("As senhas informadas não coincidem.")
+                elif any(u["username"] == reg_user.strip() for u in users_list):
+                    st.error("Este nome de usuário já está em uso.")
+                else:
+                    repo.add("users", {
+                        "username": reg_user.strip(),
+                        "password": hash_password(reg_pass),
+                        "name": reg_name.strip(),
+                        "security_question": reg_question,
+                        "security_answer": reg_answer
+                    })
+                    st.cache_data.clear()
+                    st.success("Conta criada com sucesso! Faça login na aba 'Entrar'.")
+                    
+    with auth_mode[2]:
+        st.caption("Redefina sua senha respondendo à sua pergunta de segurança.")
+        rec_user = st.text_input("Seu Nome de Usuário", key="rec_u")
+        
+        matched_rec = None
+        if rec_user:
+            matched_rec = next((u for u in users_list if u["username"] == rec_user.strip()), None)
+            if not matched_rec:
+                st.error("Usuário não cadastrado.")
+        
+        if matched_rec:
+            st.info(f"Pergunta de Segurança: **{matched_rec.get('security_question')}**")
+            with st.form("recovery_form"):
+                rec_answer = st.text_input("Sua Resposta", type="password")
+                new_pass_val = st.text_input("Nova Senha", type="password")
+                new_pass_confirm_val = st.text_input("Confirme a Nova Senha", type="password")
+                if st.form_submit_button("Redefinir Senha", type="primary", use_container_width=True):
+                    if rec_answer.strip().lower() != matched_rec.get("security_answer", "").strip().lower():
+                        st.error("Resposta de segurança incorreta.")
+                    elif new_pass_val != new_pass_confirm_val:
                         st.error("As senhas informadas não coincidem.")
-                    elif any(u["username"] == reg_user.strip() for u in users_list):
-                        st.error("Este nome de usuário já está em uso.")
                     else:
-                        repo.add("users", {
-                            "username": reg_user.strip(),
-                            "password": hash_password(reg_pass),
-                            "name": reg_name.strip(),
-                            "security_question": reg_question,
-                            "security_answer": reg_answer
-                        })
+                        repo.update("users", matched_rec["id"], {"password": hash_password(new_pass_val)})
                         st.cache_data.clear()
-                        st.success("Conta criada com sucesso! Faça login na aba 'Entrar'.")
-                        
-        with auth_mode[2]:
-            st.caption("Redefina sua senha respondendo à sua pergunta de segurança.")
-            rec_user = st.text_input("Seu Nome de Usuário", key="rec_u")
-            
-            matched_rec = None
-            if rec_user:
-                matched_rec = next((u for u in users_list if u["username"] == rec_user.strip()), None)
-                if not matched_rec:
-                    st.error("Usuário não cadastrado.")
-            
-            if matched_rec:
-                st.info(f"Pergunta de Segurança: **{matched_rec.get('security_question')}**")
-                with st.form("recovery_form"):
-                    rec_answer = st.text_input("Sua Resposta", type="password")
-                    new_pass_val = st.text_input("Nova Senha", type="password")
-                    new_pass_confirm_val = st.text_input("Confirme a Nova Senha", type="password")
-                    if st.form_submit_button("Redefinir Senha", type="primary", use_container_width=True):
-                        if rec_answer.strip().lower() != matched_rec.get("security_answer", "").strip().lower():
-                            st.error("Resposta de segurança incorreta.")
-                        elif new_pass_val != new_pass_confirm_val:
-                            st.error("As senhas informadas não coincidem.")
-                        else:
-                            repo.update("users", matched_rec["id"], {"password": hash_password(new_pass_val)})
-                            st.cache_data.clear()
-                            st.success("Senha redefinida com sucesso! Vá para a aba 'Entrar' para logar.")
+                        st.success("Senha redefinida com sucesso! Vá para a aba 'Entrar' para logar.")
     st.stop()
 
 
