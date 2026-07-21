@@ -22,6 +22,7 @@ TABLES: dict[str, list[str]] = {
     "checkins": ["id", "vehicle_id", "driver_id", "checkin_at", "checkout_at", "odometer_start", "odometer_end", "destination", "notes", "created_at"],
     "fines": ["id", "driver_id", "description", "amount", "fine_date", "status", "created_at"],
     "expenses": ["id", "vehicle_id", "expense_type", "cost", "expense_date", "description", "created_at"],
+    "tires": ["id", "vehicle_id", "position", "brand", "model", "serial_number", "install_odometer", "current_tread_mm", "status", "install_date", "last_rotation_odometer", "notes", "created_at"],
     "audit_log": ["id", "action", "details", "created_at"],
     "config": ["key", "value"],
 }

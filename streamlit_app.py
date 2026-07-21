@@ -497,7 +497,7 @@ def rows(table: str) -> list[dict[str, Any]]:
 
 
 # Query Data Tables
-users, vehicles, drivers, maintenance, fuel, checkins, fines, expenses = (rows(name) for name in ("users", "vehicles", "drivers", "maintenance", "fuel", "checkins", "fines", "expenses"))
+users, vehicles, drivers, maintenance, fuel, checkins, fines, expenses, tires = (rows(name) for name in ("users", "vehicles", "drivers", "maintenance", "fuel", "checkins", "fines", "expenses", "tires"))
 
 
 # Sidebar Logout Button and Theme Selector
@@ -1072,16 +1072,37 @@ with tab_dashboard:
             except ValueError:
                 pass
     
+    # Tire Tread Alerts
+    count_tires_alert = 0
+    pos_names_short = {"DE": "Dianteiro Esq.", "DD": "Dianteiro Dir.", "TE": "Traseiro Esq.", "TD": "Traseiro Dir.", "EST": "Estepe"}
+    for t_item in tires:
+        tread = as_number(t_item.get("current_tread_mm", 8.0))
+        v_obj = next((v for v in vehicles if v["id"] == t_item.get("vehicle_id")), None)
+        v_lbl = vehicle_label(v_obj) if v_obj else "Veículo"
+        p_name = pos_names_short.get(t_item.get("position"), t_item.get("position"))
+        
+        if tread < 1.6:
+            alerts.append(f"🔴 **Pneu Crítico (< 1.6mm)**: Pneu **{p_name}** ({t_item.get('brand', '')}) do **{v_lbl}** está com sulco em **{tread:.1f} mm** (Troca Imediata!).")
+            count_vencidos += 1
+            count_tires_alert += 1
+        elif tread <= 3.0:
+            alerts.append(f"⚠️ **Pneu com Sulco Baixo**: Pneu **{p_name}** ({t_item.get('brand', '')}) do **{v_lbl}** está com sulco em **{tread:.1f} mm** (Programar Rodízio / Substituição).")
+            count_atencao += 1
+            count_tires_alert += 1
+
     st.markdown(f"""
     <div style="display: flex; gap: 12px; margin-bottom: 15px; flex-wrap: wrap;">
         <span style="background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #ef4444; padding: 6px 14px; border-radius: 20px; font-weight: 600; font-size: 0.88rem;">
-            🔴 {count_vencidos} Documento(s) Vencido(s)
+            🔴 {count_vencidos} Alerta(s) Crítico(s)
         </span>
         <span style="background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: #f59e0b; padding: 6px 14px; border-radius: 20px; font-weight: 600; font-size: 0.88rem;">
-            ⚠️ {count_atencao} Vencimento(s) nos Próximos 30 Dias
+            ⚠️ {count_atencao} Atenção (30 dias / Pneus)
         </span>
         <span style="background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); color: #3b82f6; padding: 6px 14px; border-radius: 20px; font-weight: 600; font-size: 0.88rem;">
             🔧 {count_maint} Manutenção(ões) Pendente(s)
+        </span>
+        <span style="background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.3); color: #8b5cf6; padding: 6px 14px; border-radius: 20px; font-weight: 600; font-size: 0.88rem;">
+            🛞 {count_tires_alert} Alerta(s) de Pneus
         </span>
     </div>
     """, unsafe_allow_html=True)
@@ -2160,10 +2181,10 @@ with tab_operations:
                         st.rerun()
 
 with tab_maintenance:
-    st.subheader("🛠️ Manutenções Preventivas e Corretivas")
+    st.subheader("🛠️ Manutenções Preventivas, Corretivas e Pneus")
     
-    maint_tab1, maint_tab2, maint_tab3 = st.tabs([
-        "📋 Histórico de Manutenções", "➕ Registrar Manutenção", "✏️ Gestão de Manutenções"
+    maint_tab1, maint_tab2, maint_tab3, maint_tab4 = st.tabs([
+        "📋 Histórico de Manutenções", "➕ Registrar Manutenção", "🛞 Gestão de Pneus & Rodízio", "✏️ Gestão de Manutenções"
     ])
     
     with maint_tab1:
@@ -2224,6 +2245,230 @@ with tab_maintenance:
                         st.rerun()
 
     with maint_tab3:
+        st.markdown("##### 🛞 Controle de Pneus, Medição de Sulcos & Rodízio da Frota")
+        t_sub1, t_sub2, t_sub3, t_sub4 = st.tabs([
+            "📊 Mapa & Sulcos dos Pneus", "➕ Instalar / Cadastrar Pneu", "🔄 Registrar Rodízio", "✏️ Editar / 🗑️ Excluir Pneu"
+        ])
+
+        with t_sub1:
+            if not vehicles:
+                st.info("Nenhum veículo cadastrado.")
+            else:
+                by_v_tires = {vehicle_label(v): v for v in vehicles}
+                selected_v_tire = st.selectbox("Selecione o Veículo para Inspecionar os Pneus", list(by_v_tires), key="tire_v_inspect")
+                target_v = by_v_tires[selected_v_tire]
+                
+                v_tires = [t for t in tires if t.get("vehicle_id") == target_v["id"]]
+                if not v_tires:
+                    st.warning(f"Nenhum pneu cadastrado para o veículo {selected_v_tire}. Cadastre os pneus na aba '➕ Instalar / Cadastrar Pneu'.")
+                else:
+                    pos_labels = {
+                        "DE": "Dianteiro Esquerdo (DE)",
+                        "DD": "Dianteiro Direito (DD)",
+                        "TE": "Traseiro Esquerdo (TE)",
+                        "TD": "Traseiro Direito (TD)",
+                        "EST": "Estepe (EST)"
+                    }
+                    
+                    tire_grid_cols = st.columns(3)
+                    for idx, t_item in enumerate(v_tires):
+                        pos_code = t_item.get("position", "")
+                        pos_full = pos_labels.get(pos_code, pos_code)
+                        tread = as_number(t_item.get("current_tread_mm", 8.0))
+                        brand_mod = f"{t_item.get('brand', '')} {t_item.get('model', '')}".strip() or "Pneu"
+                        dot_sn = t_item.get("serial_number", "")
+                        
+                        if tread < 1.6:
+                            badge = "🔴 Sulco Crítico (< 1.6mm) - Trocar Imediatamente"
+                            color = "#ef4444"
+                        elif tread <= 3.0:
+                            badge = "⚠️ Sulco Baixo (1.6mm - 3.0mm) - Planejar Troca / Rodízio"
+                            color = "#f59e0b"
+                        else:
+                            badge = "🟢 Pneu em Ótimo Estado (> 3.0mm)"
+                            color = "#10b981"
+                            
+                        col_target = tire_grid_cols[idx % 3]
+                        with col_target:
+                            st.markdown(f"""
+                            <div style="background: rgba(128,128,128,0.06); border: 1px solid rgba(128,128,128,0.2); border-radius: 12px; padding: 14px; margin-bottom: 12px;">
+                                <div style="font-weight: 700; font-size: 1.05rem; margin-bottom: 4px;">🛞 {pos_full}</div>
+                                <div style="font-size: 0.9rem; opacity: 0.9;"><b>Marca/Modelo:</b> {brand_mod}</div>
+                                <div style="font-size: 0.85rem; opacity: 0.8;"><b>DOT/Nº Série:</b> {dot_sn or 'N/I'}</div>
+                                <div style="font-size: 1.1rem; font-weight: 700; color: {color}; margin: 8px 0;">📏 Sulco: {tread:.1f} mm</div>
+                                <div style="font-size: 0.8rem; font-weight: 600; color: {color};">{badge}</div>
+                                <div style="font-size: 0.8rem; opacity: 0.75; margin-top: 6px;">Odômetro Instalação: {as_number(t_item.get('install_odometer')):,.0f} km</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                    st.divider()
+                    st.markdown("##### 📋 Tabela Detalhada de Pneus do Veículo")
+                    df_t_disp = []
+                    for t_item in v_tires:
+                        tread = as_number(t_item.get("current_tread_mm", 8.0))
+                        df_t_disp.append({
+                            "Posição": pos_labels.get(t_item.get("position"), t_item.get("position")),
+                            "Marca / Modelo": f"{t_item.get('brand', '')} {t_item.get('model', '')}".strip(),
+                            "Nº Série / DOT": t_item.get("serial_number", ""),
+                            "Sulco (mm)": f"{tread:.1f} mm",
+                            "Status": "Troca Imediata" if tread < 1.6 else ("Atenção" if tread <= 3.0 else "Em uso"),
+                            "Data Instalação": t_item.get("install_date", ""),
+                            "Odômetro Instalação": f"{as_number(t_item.get('install_odometer')):,.0f} km",
+                            "Odômetro Último Rodízio": f"{as_number(t_item.get('last_rotation_odometer')):,.0f} km" if t_item.get("last_rotation_odometer") else "-"
+                        })
+                    st.dataframe(pd.DataFrame(df_t_disp), use_container_width=True, hide_index=True)
+
+        with t_sub2:
+            st.markdown("##### ➕ Instalar Novo Pneu em um Veículo")
+            if not vehicles:
+                st.info("Cadastre veículos primeiro.")
+            else:
+                by_v_label = {vehicle_label(v): v for v in vehicles if v.get("status") != "Inativo"}
+                with st.form("form_new_tire", clear_on_submit=True):
+                    t_sel_v = st.selectbox("Veículo", list(by_v_label), key="new_t_v")
+                    t_pos = st.selectbox("Posição de Instalação", [
+                        "Dianteiro Esquerdo (DE)", "Dianteiro Direito (DD)",
+                        "Traseiro Esquerdo (TE)", "Traseiro Direito (TD)", "Estepe (EST)"
+                    ], key="new_t_pos")
+                    col_tb1, col_tb2 = st.columns(2)
+                    with col_tb1:
+                        t_brand = st.text_input("Marca do Pneu (ex: Michelin, Goodyear, Pirelli)")
+                        t_model = st.text_input("Modelo do Pneu (ex: LTX Force, Cinturato)")
+                        t_sn = st.text_input("Nº de Série / DOT")
+                    with col_tb2:
+                        t_tread = st.number_input("Profundidade do Sulco Inicial (mm)", min_value=1.0, max_value=15.0, value=8.0, step=0.1)
+                        t_install_odo = st.number_input("Odômetro de Instalação (KM)", min_value=0.0, step=1.0)
+                        t_install_date = st.date_input("Data de Instalação", value=date.today())
+                    t_notes = st.text_area("Observações / Histórico do Pneu")
+                    
+                    if st.form_submit_button("Cadastrar e Instalar Pneu"):
+                        target_v_obj = by_v_label[t_sel_v]
+                        pos_code_map = {
+                            "Dianteiro Esquerdo (DE)": "DE",
+                            "Dianteiro Direito (DD)": "DD",
+                            "Traseiro Esquerdo (TE)": "TE",
+                            "Traseiro Direito (TD)": "TD",
+                            "Estepe (EST)": "EST"
+                        }
+                        p_code = pos_code_map.get(t_pos, "DE")
+                        
+                        repo.add("tires", {
+                            "vehicle_id": target_v_obj["id"],
+                            "position": p_code,
+                            "brand": t_brand.strip(),
+                            "model": t_model.strip(),
+                            "serial_number": t_sn.strip(),
+                            "install_odometer": t_install_odo,
+                            "current_tread_mm": t_tread,
+                            "status": "Em Uso",
+                            "install_date": t_install_date,
+                            "last_rotation_odometer": t_install_odo,
+                            "notes": t_notes.strip()
+                        })
+                        log_action("Instalação de Pneu", f"Pneu {t_brand} ({t_pos}) instalado no veículo {t_sel_v}.")
+                        st.cache_data.clear()
+                        st.success("Pneu cadastrado e instalado com sucesso!")
+                        st.rerun()
+
+        with t_sub3:
+            st.markdown("##### 🔄 Registrar Rodízio de Pneus")
+            if not vehicles:
+                st.info("Cadastre veículos primeiro.")
+            else:
+                by_v_label_r = {vehicle_label(v): v for v in vehicles}
+                sel_v_rot = st.selectbox("Selecione o Veículo para Realizar o Rodízio", list(by_v_label_r), key="rot_v_select")
+                target_v_rot = by_v_label_r[sel_v_rot]
+                
+                v_tires_rot = [t for t in tires if t.get("vehicle_id") == target_v_rot["id"]]
+                if not v_tires_rot:
+                    st.info(f"Nenhum pneu cadastrado para o veículo {sel_v_rot}.")
+                else:
+                    st.markdown("O rodízio troca os pneus dianteiros pelos traseiros (ex: DE ↔ TD e DD ↔ TE) para garantir desgaste uniforme da borracha.")
+                    rot_odo = st.number_input("Odômetro Atual no Rodízio (KM)", min_value=0.0, step=1.0, value=float(vehicle_odometer(target_v_rot["id"], fuel, maintenance, checkins)), key="rot_odo_val")
+                    
+                    st.markdown("###### Posições Atuais vs. Novas Posições:")
+                    pos_options = ["DE", "DD", "TE", "TD", "EST"]
+                    pos_full_names = {
+                        "DE": "Dianteiro Esquerdo (DE)",
+                        "DD": "Dianteiro Direito (DD)",
+                        "TE": "Traseiro Esquerdo (TE)",
+                        "TD": "Traseiro Direito (TD)",
+                        "EST": "Estepe (EST)"
+                    }
+                    
+                    new_positions_map = {}
+                    for t_item in v_tires_rot:
+                        curr_p = t_item.get("position", "DE")
+                        suggested_p = {"DE": "TD", "DD": "TE", "TE": "DD", "TD": "DE", "EST": "EST"}.get(curr_p, curr_p)
+                        t_lbl = f"{pos_full_names.get(curr_p, curr_p)} - {t_item.get('brand', '')} {t_item.get('model', '')} (Nº {t_item.get('serial_number', '')})"
+                        
+                        sel_p = st.selectbox(f"Nova Posição para: {t_lbl}", pos_options, index=pos_options.index(suggested_p) if suggested_p in pos_options else 0, key=f"rot_pos_{t_item['id']}")
+                        new_positions_map[t_item["id"]] = sel_p
+                        
+                    if st.button("Confirmar e Salvar Rodízio de Pneus", type="primary", key="save_rotation_btn"):
+                        for t_id, new_p in new_positions_map.items():
+                            repo.update("tires", t_id, {
+                                "position": new_p,
+                                "last_rotation_odometer": rot_odo
+                            })
+                        log_action("Rodízio de Pneus", f"Rodízio de pneus realizado para o veículo {sel_v_rot} no odômetro {rot_odo:,.0f} km.")
+                        st.cache_data.clear()
+                        st.success("Rodízio de pneus registrado com sucesso!")
+                        st.rerun()
+
+        with t_sub4:
+            st.markdown("##### ✏️ Editar ou Excluir Pneu")
+            if not tires:
+                st.info("Nenhum pneu cadastrado para edição ou exclusão.")
+            else:
+                vehicles_dict = {v["id"]: vehicle_label(v) for v in vehicles}
+                tires_map = {}
+                for t_item in tires:
+                    v_lbl = vehicles_dict.get(t_item.get("vehicle_id"), "Veículo Excluído")
+                    lbl = f"{v_lbl} - {t_item.get('position')} - {t_item.get('brand')} {t_item.get('model')} (Sulco: {as_number(t_item.get('current_tread_mm')):.1f}mm)"
+                    tires_map[lbl] = t_item
+
+                col_te1, col_te2 = st.columns(2)
+                with col_te1:
+                    st.markdown("##### ✏️ Editar Pneu / Medição de Sulco")
+                    selected_t_edit = st.selectbox("Selecione o Pneu para editar", [None] + list(tires_map), key="edit_tire_select")
+                    if selected_t_edit:
+                        t_data = tires_map[selected_t_edit]
+                        
+                        edit_t_tread = st.number_input("Nova Profundidade do Sulco (mm)", min_value=0.0, max_value=15.0, value=float(as_number(t_data.get("current_tread_mm")) or 8.0), step=0.1, key="edit_t_tread_val")
+                        edit_t_brand = st.text_input("Marca", value=t_data.get("brand", ""), key="edit_t_brand_val")
+                        edit_t_model = st.text_input("Modelo", value=t_data.get("model", ""), key="edit_t_model_val")
+                        edit_t_sn = st.text_input("Nº Série / DOT", value=t_data.get("serial_number", ""), key="edit_t_sn_val")
+                        edit_t_notes = st.text_area("Observações", value=t_data.get("notes", ""), key="edit_t_notes_val")
+                        
+                        if st.button("Salvar Alterações do Pneu", key="save_tire_btn"):
+                            repo.update("tires", t_data["id"], {
+                                "current_tread_mm": edit_t_tread,
+                                "brand": edit_t_brand.strip(),
+                                "model": edit_t_model.strip(),
+                                "serial_number": edit_t_sn.strip(),
+                                "notes": edit_t_notes.strip()
+                            })
+                            log_action("Edição de Pneu", f"Pneu ID {t_data['id']} atualizado (Sulco: {edit_t_tread:.1f}mm).")
+                            st.cache_data.clear()
+                            st.success("Dados do pneu atualizados com sucesso!")
+                            st.rerun()
+
+                with col_te2:
+                    st.markdown("##### 🗑️ Excluir / Descartar Pneu")
+                    selected_t_del = st.selectbox("Selecione o Pneu para excluir", [None] + list(tires_map), key="del_tire_select")
+                    if selected_t_del:
+                        t_del_data = tires_map[selected_t_del]
+                        st.error("⚠️ Atenção: Isso excluirá permanentemente o registro deste pneu.")
+                        confirm_t = st.checkbox("Confirmo a exclusão definitiva deste pneu.", key="confirm_t_del_check")
+                        if st.button("Excluir Pneu", type="primary", disabled=not confirm_t, key="del_tire_btn"):
+                            repo.delete("tires", t_del_data["id"])
+                            log_action("Exclusão de Pneu", f"Pneu ID {t_del_data['id']} excluído.")
+                            st.cache_data.clear()
+                            st.success("Pneu excluído com sucesso!")
+                            st.rerun()
+
+    with maint_tab4:
         if not maintenance:
             st.info("Nenhuma manutenção registrada para editar ou excluir.")
         else:
