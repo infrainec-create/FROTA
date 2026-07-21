@@ -1685,211 +1685,381 @@ with tab_vehicles:
 with tab_operations:
     st.subheader("Controle de Trânsito & Abastecimento")
     
-    # Exibir veículos em trânsito no topo
-    open_checkins = [item for item in checkins if not item.get("checkout_at")]
-    if open_checkins:
-        st.markdown("##### 🚨 Veículos Atualmente em Operação (Trânsito)")
-        active_checkin_rows = []
-        for item in open_checkins:
-            v = next((vehicle for vehicle in vehicles if vehicle["id"] == item["vehicle_id"]), None)
-            d = next((driver for driver in drivers if driver["id"] == item["driver_id"]), None)
-            
-            dest = item.get("destination", "").strip()
-            map_link = ""
-            if dest:
-                map_link = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(dest)}"
-                
-            active_checkin_rows.append({
-                "Veículo": vehicle_label(v) if v else "Desconhecido (Excluído)",
-                "Motorista": d["name"] if d else "Desconhecido (Excluído)",
-                "Saída": item.get("checkin_at"),
-                "Destino": dest,
-                "Mapa": map_link,
-                "Odômetro Inicial": f"{as_number(item.get('odometer_start')):,.0f} km",
-                "Observações": item.get("notes", "")
-            })
-            
-        st.dataframe(
-            pd.DataFrame(active_checkin_rows),
-            column_config={
-                "Mapa": st.column_config.LinkColumn("Mapa", help="Clique para ver o destino no Google Maps")
-            },
-            use_container_width=True, hide_index=True
-        )
-        st.divider()
-
-    st.markdown("##### Realizar Novas Operações")
-    op_col1, op_col2 = st.columns(2)
+    op_tab1, op_tab2, op_tab3 = st.tabs([
+        "⚡ Operações & Check-ins", "⛽ Gestão de Abastecimentos", "📖 Gestão de Viagens / Check-ins"
+    ])
     
-    with op_col1:
-        st.markdown("⛽ Registrar Abastecimento")
-        if not vehicles:
-            st.info("Cadastre veículos primeiro.")
-        else:
-            by_label_active = {vehicle_label(v): v for v in vehicles if v.get("status") != "Inativo"}
-            selected = st.selectbox("Veículo", list(by_label_active), key="fuel_v_select")
-            liters = st.number_input("Litros", min_value=0.01, step=1.0, value=30.0, key="fuel_liters")
-            cost = st.number_input("Custo Total (R$)", min_value=0.01, step=1.0, value=150.0, key="fuel_cost")
-            odometer = st.number_input("Odômetro Atual", min_value=0.0, step=1.0, value=0.0, key="fuel_odo")
-            fuel_date = st.date_input("Data", value=date.today(), key="fuel_date")
-
-            vehicle = by_label_active[selected]
-            last_odo = vehicle_odometer(vehicle["id"], fuel, maintenance, checkins)
-            diff_odo = odometer - last_odo if odometer > last_odo else 0.0
-            kml_calc = diff_odo / liters if liters > 0 else 0.0
-            cost_per_liter = cost / liters if liters > 0 else 0.0
-
-            st.markdown(f"""
-            <div style="background: rgba(128,128,128,0.05); padding: 12px; border-radius: 8px; margin: 10px 0; border: 1px solid rgba(128,128,128,0.1);">
-                📈 <b>Métricas Calculadas para o Abastecimento:</b><br/>
-                • Consumo Médio do Ciclo: <b>{kml_calc:.2f} km/L</b> (KM Percorridos: {diff_odo:,.0f} km)<br/>
-                • Preço por Litro: <b>R$ {cost_per_liter:.2f}/L</b>
-            </div>
-            """, unsafe_allow_html=True)
-
-            # Prevenção de Abastecimentos Duplicados
-            is_duplicate = any(
-                f.get("vehicle_id") == vehicle["id"] and
-                f.get("fuel_date") == str(fuel_date) and
-                as_number(f.get("liters")) == liters and
-                as_number(f.get("cost")) == cost
-                for f in fuel
-            )
-
-            # Alerta Inteligente de Consumo Incomum
-            is_abnormal = last_odo > 0 and diff_odo > 0 and (kml_calc < 3.0 or kml_calc > 28.0)
-            confirm_save_abnormal = True
-            if is_abnormal:
-                st.warning(f"⚠️ **Consumo Incomum Detectado:** A média de consumo ({kml_calc:.2f} km/L) está fora dos padrões normais de operação (3 a 28 km/L). Por favor, certifique-se de que os litros e a quilometragem do painel estão corretos.")
-                confirm_save_abnormal = st.checkbox("Confirmo que os dados de consumo incomum estão corretos e desejo salvar mesmo assim.", key="confirm_abnormal_fuel")
-
-            if st.button("Salvar Abastecimento", type="primary", use_container_width=True):
-                if odometer < last_odo:
-                    st.error(f"Erro: O odômetro digitado é menor do que o último registro deste veículo ({last_odo:,.0f} km).")
-                elif is_duplicate:
-                    st.error("⚠️ **Aviso de Duplicidade:** Já existe um abastecimento idêntico registrado para este veículo na mesma data, com a mesma quantidade de litros e valor!")
-                elif is_abnormal and not confirm_save_abnormal:
-                    st.error("Erro: Marque a caixa de confirmação de consumo incomum para salvar.")
-                else:
-                    repo.add("fuel", {
-                        "vehicle_id": vehicle["id"],
-                        "liters": liters,
-                        "cost": cost,
-                        "fuel_date": fuel_date,
-                        "odometer": odometer
-                    })
-                    log_action("Registro de Abastecimento", f"Abastecimento de {liters}L para {selected}. Consumo: {kml_calc:.2f} km/L.")
-                    st.cache_data.clear()
-                    st.success("Abastecimento salvo com sucesso!")
-                    st.rerun()
-
-    with op_col2:
-        tab_flow_1, tab_flow_2, tab_flow_3 = st.tabs(["🔑 Abrir Check-in", "🏁 Finalizar Check-in", "📖 Histórico de Viagens"])
-        
-        with tab_flow_1:
-            active_drivers = [driver for driver in drivers if driver.get("status") == "Ativo"]
-            available_vehicles = [vehicle for vehicle in vehicles if vehicle.get("status") == "Disponível"]
-            
-            # Filtra motoristas em trânsito
-            drivers_in_transit = {item["driver_id"] for item in open_checkins}
-            available_drivers = [d for d in active_drivers if d["id"] not in drivers_in_transit]
-            
-            if not available_drivers or not available_vehicles:
-                st.info("É necessário ter pelo menos um motorista ativo (e disponível) e um veículo disponível para abrir check-in.")
-            else:
-                vehicle_options = {vehicle_label(vehicle): vehicle for vehicle in available_vehicles}
-                driver_options = {driver["name"]: driver for driver in available_drivers}
-                with st.form("new_checkin_form", clear_on_submit=True):
-                    selected_vehicle = st.selectbox("Veículo", list(vehicle_options), key="checkin_v")
-                    selected_driver = st.selectbox("Motorista", list(driver_options), key="checkin_d")
-                    destination = st.text_input("Destino / Cidade")
-                    start = st.number_input("Odômetro de Saída", min_value=0.0, step=1.0)
-                    checkin_date = st.date_input("Data de Saída", value=date.today(), key="checkin_d_input")
-                    notes = st.text_area("Observações")
-                    if st.form_submit_button("Confirmar Saída"):
-                        vehicle = vehicle_options[selected_vehicle]
-                        if start < vehicle_odometer(vehicle["id"], fuel, maintenance, checkins):
-                            st.error("O odômetro de saída não pode ser menor que o último registro.")
-                        else:
-                            repo.add("checkins", {
-                                "vehicle_id": vehicle["id"],
-                                "driver_id": driver_options[selected_driver]["id"],
-                                "checkin_at": checkin_date,
-                                "checkout_at": "",
-                                "odometer_start": start,
-                                "odometer_end": "",
-                                "destination": destination.strip(),
-                                "notes": notes.strip()
-                            })
-                            repo.update("vehicles", vehicle["id"], {"status": "Em uso"})
-                            log_action("Abertura de Check-in", f"Veículo {selected_vehicle} retirado por {selected_driver} com destino a {destination}.")
-                            st.cache_data.clear()
-                            st.success("Check-in aberto!")
-                            st.rerun()
-
-        with tab_flow_2:
-            if not open_checkins:
-                st.info("Não há check-ins abertos para finalizar.")
-            else:
-                checkin_options = {}
-                for item in open_checkins:
-                    v = next((veh for veh in vehicles if veh["id"] == item["vehicle_id"]), None)
-                    v_label = vehicle_label(v) if v else f"Veículo {item['vehicle_id']} (Excluído)"
-                    lbl = f"{v_label} · Saída: {item.get('checkin_at', '')}"
-                    checkin_options[lbl] = item
+    with op_tab1:
+        # Exibir veículos em trânsito no topo
+        open_checkins = [item for item in checkins if not item.get("checkout_at")]
+        if open_checkins:
+            st.markdown("##### 🚨 Veículos Atualmente em Operação (Trânsito)")
+            active_checkin_rows = []
+            for item in open_checkins:
+                v = next((vehicle for vehicle in vehicles if vehicle["id"] == item["vehicle_id"]), None)
+                d = next((driver for driver in drivers if driver["id"] == item["driver_id"]), None)
                 
-                with st.form("checkout_form", clear_on_submit=True):
-                    selected_checkin = st.selectbox("Selecione a Viagem", list(checkin_options))
-                    end = st.number_input("Odômetro de Retorno", min_value=0.0, step=1.0)
-                    checkout_date = st.date_input("Data de Retorno", value=date.today(), key="checkout_d_input")
-                    if st.form_submit_button("Confirmar Retorno"):
-                        checkin = checkin_options[selected_checkin]
-                        if end < as_number(checkin.get("odometer_start")):
-                            st.error("O odômetro de chegada não pode ser menor que o de saída.")
-                        else:
-                            repo.update("checkins", checkin["id"], {"checkout_at": checkout_date, "odometer_end": end})
-                            repo.update("vehicles", checkin["vehicle_id"], {"status": "Disponível"})
-                            log_action("Fechamento de Check-in", f"Check-in finalizado para veículo ID {checkin['vehicle_id']}.")
-                            st.cache_data.clear()
-                            st.success("Check-in finalizado!")
-                            st.rerun()
-
-        with tab_flow_3:
-            st.markdown("##### 📖 Viagens Finalizadas (Histórico)")
-            closed_checkins = [item for item in checkins if item.get("checkout_at")]
-            if closed_checkins:
-                closed_rows = []
-                for item in closed_checkins:
-                    v = next((veh for veh in vehicles if veh["id"] == item["vehicle_id"]), None)
-                    d = next((driver for driver in drivers if driver["id"] == item["driver_id"]), None)
-                    odo_start = as_number(item.get("odometer_start"))
-                    odo_end = as_number(item.get("odometer_end"))
-                    dist = odo_end - odo_start if odo_end >= odo_start else 0.0
+                dest = item.get("destination", "").strip()
+                map_link = ""
+                if dest:
+                    map_link = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(dest)}"
                     
-                    dest = item.get("destination", "").strip()
-                    map_link = ""
-                    if dest:
-                        map_link = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(dest)}"
+                active_checkin_rows.append({
+                    "Veículo": vehicle_label(v) if v else "Desconhecido (Excluído)",
+                    "Motorista": d["name"] if d else "Desconhecido (Excluído)",
+                    "Saída": item.get("checkin_at"),
+                    "Destino": dest,
+                    "Mapa": map_link,
+                    "Odômetro Inicial": f"{as_number(item.get('odometer_start')):,.0f} km",
+                    "Observações": item.get("notes", "")
+                })
+                
+            st.dataframe(
+                pd.DataFrame(active_checkin_rows),
+                column_config={
+                    "Mapa": st.column_config.LinkColumn("Mapa", help="Clique para ver o destino no Google Maps")
+                },
+                use_container_width=True, hide_index=True
+            )
+            st.divider()
 
-                    closed_rows.append({
-                        "Veículo": vehicle_label(v) if v else "Veículo Excluído",
-                        "Motorista": d["name"] if d else "Motorista Excluído",
-                        "Saída": item.get("checkin_at"),
-                        "Retorno": item.get("checkout_at"),
-                        "Destino": dest,
-                        "Mapa": map_link,
-                        "Distância": f"{dist:,.0f} km",
-                        "Notas": item.get("notes", "")
-                    })
-                st.dataframe(
-                    pd.DataFrame(closed_rows),
-                    column_config={
-                        "Mapa": st.column_config.LinkColumn("Mapa", help="Clique para ver o destino no Google Maps")
-                    },
-                    use_container_width=True, hide_index=True
-                )
+        st.markdown("##### Realizar Novas Operações")
+        op_col1, op_col2 = st.columns(2)
+        
+        with op_col1:
+            st.markdown("⛽ Registrar Abastecimento")
+            if not vehicles:
+                st.info("Cadastre veículos primeiro.")
             else:
-                st.info("Nenhuma viagem finalizada encontrada no histórico.")
+                by_label_active = {vehicle_label(v): v for v in vehicles if v.get("status") != "Inativo"}
+                selected = st.selectbox("Veículo", list(by_label_active), key="fuel_v_select")
+                liters = st.number_input("Litros", min_value=0.01, step=1.0, value=30.0, key="fuel_liters")
+                cost = st.number_input("Custo Total (R$)", min_value=0.01, step=1.0, value=150.0, key="fuel_cost")
+                odometer = st.number_input("Odômetro Atual", min_value=0.0, step=1.0, value=0.0, key="fuel_odo")
+                fuel_date = st.date_input("Data", value=date.today(), key="fuel_date")
+
+                vehicle = by_label_active[selected]
+                last_odo = vehicle_odometer(vehicle["id"], fuel, maintenance, checkins)
+                diff_odo = odometer - last_odo if odometer > last_odo else 0.0
+                kml_calc = diff_odo / liters if liters > 0 else 0.0
+                cost_per_liter = cost / liters if liters > 0 else 0.0
+
+                st.markdown(f"""
+                <div style="background: rgba(128,128,128,0.05); padding: 12px; border-radius: 8px; margin: 10px 0; border: 1px solid rgba(128,128,128,0.1);">
+                    📈 <b>Métricas Calculadas para o Abastecimento:</b><br/>
+                    • Consumo Médio do Ciclo: <b>{kml_calc:.2f} km/L</b> (KM Percorridos: {diff_odo:,.0f} km)<br/>
+                    • Preço por Litro: <b>R$ {cost_per_liter:.2f}/L</b>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Prevenção de Abastecimentos Duplicados
+                is_duplicate = any(
+                    f.get("vehicle_id") == vehicle["id"] and
+                    f.get("fuel_date") == str(fuel_date) and
+                    as_number(f.get("liters")) == liters and
+                    as_number(f.get("cost")) == cost
+                    for f in fuel
+                )
+
+                # Alerta Inteligente de Consumo Incomum
+                is_abnormal = last_odo > 0 and diff_odo > 0 and (kml_calc < 3.0 or kml_calc > 28.0)
+                confirm_save_abnormal = True
+                if is_abnormal:
+                    st.warning(f"⚠️ **Consumo Incomum Detectado:** A média de consumo ({kml_calc:.2f} km/L) está fora dos padrões normais de operação (3 a 28 km/L). Por favor, certifique-se de que os litros e a quilometragem do painel estão corretos.")
+                    confirm_save_abnormal = st.checkbox("Confirmo que os dados de consumo incomum estão corretos e desejo salvar mesmo assim.", key="confirm_abnormal_fuel")
+
+                if st.button("Salvar Abastecimento", type="primary", use_container_width=True):
+                    if odometer < last_odo:
+                        st.error(f"Erro: O odômetro digitado é menor do que o último registro deste veículo ({last_odo:,.0f} km).")
+                    elif is_duplicate:
+                        st.error("⚠️ **Aviso de Duplicidade:** Já existe um abastecimento idêntico registrado para este veículo na mesma data, com a mesma quantidade de litros e valor!")
+                    elif is_abnormal and not confirm_save_abnormal:
+                        st.error("Erro: Marque a caixa de confirmação de consumo incomum para salvar.")
+                    else:
+                        repo.add("fuel", {
+                            "vehicle_id": vehicle["id"],
+                            "liters": liters,
+                            "cost": cost,
+                            "fuel_date": fuel_date,
+                            "odometer": odometer
+                        })
+                        log_action("Registro de Abastecimento", f"Abastecimento de {liters}L para {selected}. Consumo: {kml_calc:.2f} km/L.")
+                        st.cache_data.clear()
+                        st.success("Abastecimento salvo com sucesso!")
+                        st.rerun()
+
+        with op_col2:
+            tab_flow_1, tab_flow_2, tab_flow_3 = st.tabs(["🔑 Abrir Check-in", "🏁 Finalizar Check-in", "📖 Histórico de Viagens"])
+            
+            with tab_flow_1:
+                active_drivers = [driver for driver in drivers if driver.get("status") == "Ativo"]
+                available_vehicles = [vehicle for vehicle in vehicles if vehicle.get("status") == "Disponível"]
+                
+                # Filtra motoristas em trânsito
+                drivers_in_transit = {item["driver_id"] for item in open_checkins}
+                available_drivers = [d for d in active_drivers if d["id"] not in drivers_in_transit]
+                
+                if not available_drivers or not available_vehicles:
+                    st.info("É necessário ter pelo menos um motorista ativo (e disponível) e um veículo disponível para abrir check-in.")
+                else:
+                    vehicle_options = {vehicle_label(vehicle): vehicle for vehicle in available_vehicles}
+                    driver_options = {driver["name"]: driver for driver in available_drivers}
+                    with st.form("new_checkin_form", clear_on_submit=True):
+                        selected_vehicle = st.selectbox("Veículo", list(vehicle_options), key="checkin_v")
+                        selected_driver = st.selectbox("Motorista", list(driver_options), key="checkin_d")
+                        destination = st.text_input("Destino / Cidade")
+                        start = st.number_input("Odômetro de Saída", min_value=0.0, step=1.0)
+                        checkin_date = st.date_input("Data de Saída", value=date.today(), key="checkin_d_input")
+                        notes = st.text_area("Observações")
+                        if st.form_submit_button("Confirmar Saída"):
+                            vehicle = vehicle_options[selected_vehicle]
+                            if start < vehicle_odometer(vehicle["id"], fuel, maintenance, checkins):
+                                st.error("O odômetro de saída não pode ser menor que o último registro.")
+                            else:
+                                repo.add("checkins", {
+                                    "vehicle_id": vehicle["id"],
+                                    "driver_id": driver_options[selected_driver]["id"],
+                                    "checkin_at": checkin_date,
+                                    "checkout_at": "",
+                                    "odometer_start": start,
+                                    "odometer_end": "",
+                                    "destination": destination.strip(),
+                                    "notes": notes.strip()
+                                })
+                                repo.update("vehicles", vehicle["id"], {"status": "Em uso"})
+                                log_action("Abertura de Check-in", f"Veículo {selected_vehicle} retirado por {selected_driver} com destino a {destination}.")
+                                st.cache_data.clear()
+                                st.success("Check-in aberto!")
+                                st.rerun()
+
+            with tab_flow_2:
+                if not open_checkins:
+                    st.info("Não há check-ins abertos para finalizar.")
+                else:
+                    checkin_options = {}
+                    for item in open_checkins:
+                        v = next((veh for veh in vehicles if veh["id"] == item["vehicle_id"]), None)
+                        v_label = vehicle_label(v) if v else f"Veículo {item['vehicle_id']} (Excluído)"
+                        lbl = f"{v_label} · Saída: {item.get('checkin_at', '')}"
+                        checkin_options[lbl] = item
+                    
+                    with st.form("checkout_form", clear_on_submit=True):
+                        selected_checkin = st.selectbox("Selecione a Viagem", list(checkin_options))
+                        end = st.number_input("Odômetro de Retorno", min_value=0.0, step=1.0)
+                        checkout_date = st.date_input("Data de Retorno", value=date.today(), key="checkout_d_input")
+                        if st.form_submit_button("Confirmar Retorno"):
+                            checkin = checkin_options[selected_checkin]
+                            if end < as_number(checkin.get("odometer_start")):
+                                st.error("O odômetro de chegada não pode ser menor que o de saída.")
+                            else:
+                                repo.update("checkins", checkin["id"], {"checkout_at": checkout_date, "odometer_end": end})
+                                repo.update("vehicles", checkin["vehicle_id"], {"status": "Disponível"})
+                                log_action("Fechamento de Check-in", f"Check-in finalizado para veículo ID {checkin['vehicle_id']}.")
+                                st.cache_data.clear()
+                                st.success("Check-in finalizado!")
+                                st.rerun()
+
+            with tab_flow_3:
+                st.markdown("##### 📖 Viagens Finalizadas (Histórico)")
+                closed_checkins = [item for item in checkins if item.get("checkout_at")]
+                if closed_checkins:
+                    closed_rows = []
+                    for item in closed_checkins:
+                        v = next((veh for veh in vehicles if veh["id"] == item["vehicle_id"]), None)
+                        d = next((driver for driver in drivers if driver["id"] == item["driver_id"]), None)
+                        odo_start = as_number(item.get("odometer_start"))
+                        odo_end = as_number(item.get("odometer_end"))
+                        dist = odo_end - odo_start if odo_end >= odo_start else 0.0
+                        
+                        dest = item.get("destination", "").strip()
+                        map_link = ""
+                        if dest:
+                            map_link = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(dest)}"
+
+                        closed_rows.append({
+                            "Veículo": vehicle_label(v) if v else "Veículo Excluído",
+                            "Motorista": d["name"] if d else "Motorista Excluído",
+                            "Saída": item.get("checkin_at"),
+                            "Retorno": item.get("checkout_at"),
+                            "Destino": dest,
+                            "Mapa": map_link,
+                            "Distância": f"{dist:,.0f} km",
+                            "Notas": item.get("notes", "")
+                        })
+                    st.dataframe(
+                        pd.DataFrame(closed_rows),
+                        column_config={
+                            "Mapa": st.column_config.LinkColumn("Mapa", help="Clique para ver o destino no Google Maps")
+                        },
+                        use_container_width=True, hide_index=True
+                    )
+                else:
+                    st.info("Nenhuma viagem finalizada encontrada no histórico.")
+
+    with op_tab2:
+        st.markdown("##### ⛽ Editar ou Excluir Abastecimentos")
+        if not fuel:
+            st.info("Nenhum abastecimento registrado até o momento.")
+        else:
+            vehicles_dict = {v["id"]: vehicle_label(v) for v in vehicles}
+            fuel_map = {}
+            for f_item in fuel:
+                v_lbl = vehicles_dict.get(f_item.get("vehicle_id"), "Veículo Excluído")
+                lbl = f"{f_item.get('fuel_date')} - {v_lbl} - {as_number(f_item.get('liters')):.1f}L - R$ {as_number(f_item.get('cost')):.2f} ({as_number(f_item.get('odometer')):.0f} km)"
+                fuel_map[lbl] = f_item
+
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                st.markdown("##### ✏️ Editar Abastecimento")
+                selected_f_edit = st.selectbox("Selecione o Abastecimento para editar", [None] + list(fuel_map), key="edit_f_select")
+                if selected_f_edit:
+                    f_data = fuel_map[selected_f_edit]
+                    edit_v_obj = next((v for v in vehicles if v["id"] == f_data.get("vehicle_id")), None)
+                    v_all_lbls = [vehicle_label(v) for v in vehicles if v.get("status") != "Inativo" or v["id"] == f_data.get("vehicle_id")]
+                    
+                    edit_f_v = st.selectbox("Veículo", v_all_lbls, index=v_all_lbls.index(vehicle_label(edit_v_obj)) if edit_v_obj else 0, key="edit_f_v_sel")
+                    edit_f_liters = st.number_input("Litros", min_value=0.01, step=1.0, value=float(as_number(f_data.get("liters")) or 1.0), key="edit_f_liters_val")
+                    edit_f_cost = st.number_input("Custo Total (R$)", min_value=0.01, step=1.0, value=float(as_number(f_data.get("cost")) or 1.0), key="edit_f_cost_val")
+                    edit_f_odo = st.number_input("Odômetro Atual (KM)", min_value=0.0, step=1.0, value=float(as_number(f_data.get("odometer"))), key="edit_f_odo_val")
+                    
+                    raw_date = f_data.get("fuel_date", "")
+                    try:
+                        parsed_date = date.fromisoformat(str(raw_date)[:10])
+                    except ValueError:
+                        parsed_date = date.today()
+                    edit_f_date = st.date_input("Data do Abastecimento", value=parsed_date, key="edit_f_date_val")
+                    
+                    if st.button("Salvar Alterações do Abastecimento", key="save_fuel_btn"):
+                        by_label_all = {vehicle_label(v): v for v in vehicles}
+                        sel_v_obj = by_label_all[edit_f_v]
+                        repo.update("fuel", f_data["id"], {
+                            "vehicle_id": sel_v_obj["id"],
+                            "liters": edit_f_liters,
+                            "cost": edit_f_cost,
+                            "fuel_date": edit_f_date,
+                            "odometer": edit_f_odo
+                        })
+                        log_action("Edição de Abastecimento", f"Abastecimento ID {f_data['id']} atualizado.")
+                        st.cache_data.clear()
+                        st.success("Abastecimento atualizado com sucesso!")
+                        st.rerun()
+
+            with col_f2:
+                st.markdown("##### 🗑️ Excluir Abastecimento")
+                selected_f_del = st.selectbox("Selecione o Abastecimento para excluir", [None] + list(fuel_map), key="del_f_select")
+                if selected_f_del:
+                    f_del_data = fuel_map[selected_f_del]
+                    st.error("⚠️ Atenção: Isso excluirá permanentemente o registro deste abastecimento.")
+                    confirm_f = st.checkbox("Confirmo a exclusão definitiva deste abastecimento.", key="confirm_f_del_check")
+                    if st.button("Excluir Abastecimento", type="primary", disabled=not confirm_f, key="del_fuel_btn"):
+                        repo.delete("fuel", f_del_data["id"])
+                        log_action("Exclusão de Abastecimento", f"Abastecimento ID {f_del_data['id']} excluído.")
+                        st.cache_data.clear()
+                        st.success("Abastecimento excluído com sucesso!")
+                        st.rerun()
+
+    with op_tab3:
+        st.markdown("##### 📖 Editar ou Excluir Viagens / Check-ins")
+        if not checkins:
+            st.info("Nenhuma viagem / check-in registrada até o momento.")
+        else:
+            vehicles_dict = {v["id"]: vehicle_label(v) for v in vehicles}
+            drivers_dict = {d["id"]: d["name"] for d in drivers}
+            checkins_map = {}
+            for c_item in checkins:
+                v_lbl = vehicles_dict.get(c_item.get("vehicle_id"), "Veículo Excluído")
+                d_lbl = drivers_dict.get(c_item.get("driver_id"), "Motorista Excluído")
+                dest = c_item.get("destination", "")
+                status_str = "Finalizado" if c_item.get("checkout_at") else "Em Aberto"
+                label = f"{c_item.get('checkin_at')} - {v_lbl} ({d_lbl}) -> {dest or 'Sem Destino'} [{status_str}]"
+                checkins_map[label] = c_item
+
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                st.markdown("##### ✏️ Editar Viagem / Check-in")
+                selected_c_edit = st.selectbox("Selecione o Check-in para editar", [None] + list(checkins_map), key="edit_c_select")
+                if selected_c_edit:
+                    c_data = checkins_map[selected_c_edit]
+                    edit_v_obj = next((v for v in vehicles if v["id"] == c_data.get("vehicle_id")), None)
+                    v_all_lbls = [vehicle_label(v) for v in vehicles if v.get("status") != "Inativo" or v["id"] == c_data.get("vehicle_id")]
+                    
+                    edit_d_obj = next((d for d in drivers if d["id"] == c_data.get("driver_id")), None)
+                    d_all_lbls = [d["name"] for d in drivers if d.get("status") == "Ativo" or d["id"] == c_data.get("driver_id")]
+                    
+                    edit_c_v = st.selectbox("Veículo", v_all_lbls, index=v_all_lbls.index(vehicle_label(edit_v_obj)) if edit_v_obj else 0, key="edit_c_v_sel")
+                    edit_c_d = st.selectbox("Motorista", d_all_lbls, index=d_all_lbls.index(edit_d_obj["name"]) if edit_d_obj and edit_d_obj["name"] in d_all_lbls else 0, key="edit_c_d_sel")
+                    edit_c_dest = st.text_input("Destino / Cidade", value=c_data.get("destination", ""), key="edit_c_dest_val")
+                    edit_c_start = st.number_input("Odômetro de Saída (KM)", min_value=0.0, step=1.0, value=float(as_number(c_data.get("odometer_start"))), key="edit_c_start_val")
+                    
+                    raw_in_date = c_data.get("checkin_at", "")
+                    try:
+                        parsed_in_date = date.fromisoformat(str(raw_in_date)[:10])
+                    except ValueError:
+                        parsed_in_date = date.today()
+                    edit_c_indate = st.date_input("Data de Saída", value=parsed_in_date, key="edit_c_indate_val")
+                    
+                    is_closed = bool(c_data.get("checkout_at"))
+                    has_return = st.checkbox("Viagem Finalizada (Possui data de retorno)", value=is_closed, key="edit_c_is_closed")
+                    
+                    edit_c_outdate_val = date.today()
+                    edit_c_end_val = float(as_number(c_data.get("odometer_end")))
+                    if has_return:
+                        raw_out_date = c_data.get("checkout_at", "")
+                        try:
+                            edit_c_outdate_val = date.fromisoformat(str(raw_out_date)[:10])
+                        except ValueError:
+                            edit_c_outdate_val = date.today()
+                        edit_c_outdate = st.date_input("Data de Retorno", value=edit_c_outdate_val, key="edit_c_outdate_val")
+                        edit_c_end = st.number_input("Odômetro de Retorno (KM)", min_value=0.0, step=1.0, value=edit_c_end_val, key="edit_c_end_val")
+                    else:
+                        edit_c_outdate = ""
+                        edit_c_end = ""
+                        
+                    edit_c_notes = st.text_area("Observações", value=c_data.get("notes", ""), key="edit_c_notes_val")
+                    
+                    if st.button("Salvar Alterações de Check-in", key="save_checkin_btn"):
+                        by_label_all = {vehicle_label(v): v for v in vehicles}
+                        by_driver_all = {d["name"]: d for d in drivers}
+                        sel_v_obj = by_label_all[edit_c_v]
+                        sel_d_obj = by_driver_all[edit_c_d]
+                        
+                        repo.update("checkins", c_data["id"], {
+                            "vehicle_id": sel_v_obj["id"],
+                            "driver_id": sel_d_obj["id"],
+                            "checkin_at": edit_c_indate,
+                            "checkout_at": edit_c_outdate if has_return else "",
+                            "odometer_start": edit_c_start,
+                            "odometer_end": edit_c_end if has_return else "",
+                            "destination": edit_c_dest.strip(),
+                            "notes": edit_c_notes.strip()
+                        })
+                        
+                        # Atualiza status do veículo se necessário
+                        if not has_return:
+                            repo.update("vehicles", sel_v_obj["id"], {"status": "Em uso"})
+                        else:
+                            repo.update("vehicles", sel_v_obj["id"], {"status": "Disponível"})
+                            
+                        log_action("Edição de Check-in", f"Check-in ID {c_data['id']} atualizado.")
+                        st.cache_data.clear()
+                        st.success("Check-in atualizado com sucesso!")
+                        st.rerun()
+
+            with col_c2:
+                st.markdown("##### 🗑️ Excluir Viagem / Check-in")
+                selected_c_del = st.selectbox("Selecione o Check-in para excluir", [None] + list(checkins_map), key="del_c_select")
+                if selected_c_del:
+                    c_del_data = checkins_map[selected_c_del]
+                    st.error("⚠️ Atenção: Isso excluirá permanentemente o registro desta viagem.")
+                    confirm_c = st.checkbox("Confirmo a exclusão definitiva desta viagem.", key="confirm_c_del_check")
+                    if st.button("Excluir Viagem / Check-in", type="primary", disabled=not confirm_c, key="del_checkin_btn"):
+                        if not c_del_data.get("checkout_at"):
+                            repo.update("vehicles", c_del_data["vehicle_id"], {"status": "Disponível"})
+                        repo.delete("checkins", c_del_data["id"])
+                        log_action("Exclusão de Check-in", f"Check-in ID {c_del_data['id']} excluído.")
+                        st.cache_data.clear()
+                        st.success("Viagem excluída com sucesso!")
+                        st.rerun()
 
 with tab_maintenance:
     st.subheader("🛠️ Manutenções Preventivas e Corretivas")
