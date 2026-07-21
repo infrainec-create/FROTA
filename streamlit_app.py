@@ -512,6 +512,29 @@ if st.sidebar.button("🚪 Sair do Sistema", use_container_width=True):
     st.session_state["username"] = ""
     st.rerun()
 
+st.sidebar.divider()
+st.sidebar.markdown("##### 📌 MÓDULOS DO SISTEMA")
+
+nav_options = [
+    "📊 Painel Geral",
+    "⚡ Operações Rápidas",
+    "👥 Veículos e Motoristas",
+    "🔧 Manutenções & Pneus",
+    "🚨 Multas & Infrações",
+    "💸 Outras Despesas",
+    "📑 Relatórios & Filtros",
+    "📁 Auditoria do Sistema",
+    "🤖 Analista IA",
+    "⚙️ Configurações"
+]
+
+selected_module = st.sidebar.radio(
+    "Navegação Principal",
+    options=nav_options,
+    key="sidebar_nav_module",
+    label_visibility="collapsed"
+)
+
 # Injected CSS based on Theme
 theme_css = ""
 
@@ -522,6 +545,30 @@ html, body, [class*="css"] {{
     font-family: 'Plus Jakarta Sans', sans-serif;
 }}
 {theme_css}
+/* Sidebar Vertical Navigation Menu Styling */
+[data-testid="stSidebar"] [data-testid="stRadio"] > div {{
+    gap: 6px;
+}}
+[data-testid="stSidebar"] [data-testid="stRadio"] label {{
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(128, 128, 128, 0.12);
+    background: rgba(128, 128, 128, 0.04);
+    transition: all 0.2s ease;
+    font-weight: 500;
+    cursor: pointer;
+    font-size: 0.92rem;
+}}
+[data-testid="stSidebar"] [data-testid="stRadio"] label:hover {{
+    background: rgba(59, 130, 246, 0.1);
+    border-color: rgba(59, 130, 246, 0.3);
+}}
+[data-testid="stSidebar"] [data-testid="stRadio"] label[data-checked="true"] {{
+    background: rgba(59, 130, 246, 0.18);
+    border: 1px solid rgba(59, 130, 246, 0.5);
+    color: #3b82f6;
+    font-weight: 700;
+}}
 /* Card designs */
 .kpi-card {{
     background: rgba(128, 128, 128, 0.05);
@@ -878,10 +925,6 @@ st.caption("Gestão avançada de frotas com banco SQL de alta performance (SQLit
 if not (secret("gcp_service_account") and (secret("google_drive_folder_id") or secret("google_sheet_id"))):
     st.warning("⚠️ Executando com banco de dados SQLite local (`frota_drive.db`). Para sincronizar os dados no Google Drive, configure o arquivo `.streamlit/secrets.toml`.")
 
-tab_dashboard, tab_vehicles, tab_operations, tab_maintenance, tab_fines, tab_expenses, tab_reports, tab_logs, tab_settings, tab_ai = st.tabs([
-    "📊 Painel Geral", "👥 Veículos e Motoristas", "⚡ Operações Rápidas", "🔧 Manutenção", "🚨 Multas & Infrações", "💸 Outras Despesas", "📑 Relatórios & Filtros", "📁 Auditoria", "⚙️ Configurações", "🤖 Analista IA"
-])
-
 # Obtém limite de km configurado no banco de dados (padrão 10.000)
 try:
     maint_limit_km = int(repo.get_config("maint_threshold", "10000"))
@@ -889,7 +932,7 @@ except AttributeError:
     st.cache_resource.clear()
     st.rerun()
 
-with tab_dashboard:
+if selected_module == "📊 Painel Geral":
     st.subheader("Indicadores de Desempenho (KPIs)")
     
     # 📆 FILTRO TEMPORAL NO DASHBOARD
@@ -1528,7 +1571,7 @@ with tab_dashboard:
     except Exception as e_exec_pdf:
         st.error(f"Erro ao preparar o relatório executivo: {e_exec_pdf}")
 
-with tab_vehicles:
+elif selected_module == "👥 Veículos e Motoristas":
     st.subheader("Gerenciamento de Cadastro")
     
     v_tab_view, v_tab_docs, v_tab_create, v_tab_edit, v_tab_delete = st.tabs([
@@ -1880,7 +1923,7 @@ with tab_vehicles:
                     st.success("Motorista excluído com sucesso!")
                     st.rerun()
 
-with tab_operations:
+elif selected_module == "⚡ Operações Rápidas":
     st.subheader("Controle de Trânsito & Abastecimento")
     
     op_tab1, op_tab2, op_tab3 = st.tabs([
@@ -2259,7 +2302,7 @@ with tab_operations:
                         st.success("Viagem excluída com sucesso!")
                         st.rerun()
 
-with tab_maintenance:
+elif selected_module == "🔧 Manutenções & Pneus":
     st.subheader("🛠️ Manutenções Preventivas, Corretivas e Pneus")
     
     maint_tab1, maint_tab2, maint_tab3, maint_tab4 = st.tabs([
@@ -2615,7 +2658,7 @@ with tab_maintenance:
                         st.success("Manutenção excluída com sucesso!")
                         st.rerun()
 
-with tab_fines:
+elif selected_module == "🚨 Multas & Infrações":
     st.subheader("🚨 Controle de Multas & Infrações de Trânsito")
     
     fine_tab1, fine_tab2, fine_tab3 = st.tabs([
@@ -2713,7 +2756,7 @@ with tab_fines:
                     st.success("Multa excluída com sucesso!")
                     st.rerun()
 
-with tab_expenses:
+elif selected_module == "💸 Outras Despesas":
     st.subheader("💸 Controle de Outras Despesas Operacionais")
     st.caption("Registre custos como pedágios, estacionamento, lavagens e outras taxas.")
     
@@ -2828,7 +2871,7 @@ with tab_expenses:
                         st.success("Despesa excluída com sucesso!")
                         st.rerun()
 
-with tab_reports:
+elif selected_module == "📑 Relatórios & Filtros":
     st.subheader("📑 Central de Relatórios com Filtros Dinâmicos")
     
     table_options = {
@@ -2999,7 +3042,7 @@ with tab_reports:
     else:
         st.info("Ainda não há dados cadastrados nessa categoria para gerar relatórios.")
 
-with tab_logs:
+elif selected_module == "📁 Auditoria do Sistema":
     st.subheader("📁 Histórico de Auditoria do Sistema")
     st.caption("Logs das ações de cadastro, edição, exclusão e operação de trânsito em ordem cronológica.")
     
@@ -3061,7 +3104,7 @@ with tab_logs:
     else:
         st.info("Nenhum registro de auditoria disponível.")
 
-with tab_settings:
+elif selected_module == "⚙️ Configurações":
     st.subheader("⚙️ Configurações Gerais do Sistema")
     st.caption("Ajuste as metas, limites e comportamentos operacionais do FrotaControl Pro.")
     
@@ -3136,7 +3179,7 @@ with tab_settings:
     else:
         st.info("Nenhum backup local rotativo gerado ainda. Ele será gerado na próxima alteração de dados.")
 
-with tab_ai:
+elif selected_module == "🤖 Analista IA":
     st.subheader("🤖 Analista de Manutenção Inteligente")
     st.caption("Parecer automatizado gerado por Inteligência Artificial (OpenAI) baseado em dados históricos reais.")
     
