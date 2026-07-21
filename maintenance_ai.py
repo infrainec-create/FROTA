@@ -111,7 +111,7 @@ def analyze_maintenance(
             api_key=clean_key,
             base_url="https://generativelanguage.googleapis.com/v1beta/openai"
         )
-        gemini_models = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-pro"]
+        gemini_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
         last_err = None
         for g_model in gemini_models:
             try:
