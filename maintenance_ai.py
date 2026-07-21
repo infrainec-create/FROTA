@@ -194,12 +194,13 @@ def analyze_maintenance(
                 else:
                     err_json = r.json() if "json" in r.headers.get("content-type", "").lower() else r.text
                     last_err = Exception(f"Erro na API do Gemini (HTTP {r.status_code}): {err_json}")
-                    if r.status_code in (404, 400):
+                    if r.status_code in (404, 400, 429, 500, 502, 503, 504):
                         continue
                     raise last_err
             except Exception as e:
                 last_err = e
-                if "404" in str(e) or "400" in str(e):
+                err_s = str(e).lower()
+                if any(code in err_s for code in ["404", "400", "429", "500", "502", "503", "504", "unavailable", "high demand"]):
                     continue
                 raise e
         if last_err:
