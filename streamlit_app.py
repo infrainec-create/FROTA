@@ -3093,26 +3093,37 @@ with tab_ai:
         else:
             vehicle = next((v for v in vehicles if vehicle_label(v) == selected_ai), None)
         
-        ai_mode = st.radio("Selecione o Tipo de Análise da IA", ["Parecer Técnico Geral", "Previsão Orçamentária (Próximo Mês)"], horizontal=True)
+        ai_mode = st.radio(
+            "Selecione o Tipo de Análise da IA",
+            ["Parecer Técnico Geral", "Previsão Orçamentária (Próximo Mês)", "📋 Plano de Manutenção Preventiva Personalizado"],
+            horizontal=True
+        )
         
         # We can run if vehicle is None (Toda a Frota) OR if single vehicle is selected
         run_ai = False
         if selected_ai == "Toda a Frota (Consolidado)" or vehicle is not None:
             run_ai = True
             
-        if run_ai and st.button("🚀 Gerar Parecer de IA", type="primary"):
-            with st.spinner("Analisando padrões de quilometragem, custos e histórico de serviços..."):
+        if run_ai and st.button("🚀 Gerar Parecer / Plano com IA", type="primary"):
+            with st.spinner("Consultando dados técnicos do modelo, histórico de manutenções e pneus..."):
                 try:
-                    mode_val = "budget" if ai_mode == "Previsão Orçamentária (Próximo Mês)" else "general"
+                    if ai_mode == "Previsão Orçamentária (Próximo Mês)":
+                        mode_val = "budget"
+                    elif ai_mode == "📋 Plano de Manutenção Preventiva Personalizado":
+                        mode_val = "plan"
+                    else:
+                        mode_val = "general"
                     
                     if vehicle is None:
                         exp_list = expenses
                         maint_list = maintenance
                         fuel_list = fuel
+                        tires_sub = tires
                     else:
                         exp_list = [e for e in expenses if e.get("vehicle_id") == vehicle["id"]]
                         maint_list = [m for m in maintenance if m.get("vehicle_id") == vehicle["id"]]
                         fuel_list = [f for f in fuel if f.get("vehicle_id") == vehicle["id"]]
+                        tires_sub = [t for t in tires if t.get("vehicle_id") == vehicle["id"]]
                         
                     answer = analyze_maintenance(
                         str(api_key), vehicle,
@@ -3121,6 +3132,7 @@ with tab_ai:
                         mode=mode_val,
                         vehicles_list=vehicles,
                         expenses=exp_list,
+                        tires_list=tires_sub,
                         provider=provider_val
                     )
                     
