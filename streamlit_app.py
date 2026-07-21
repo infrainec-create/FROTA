@@ -1911,7 +1911,7 @@ with tab_operations:
             col_f1, col_f2 = st.columns(2)
             with col_f1:
                 st.markdown("##### ✏️ Editar Abastecimento")
-                selected_f_edit = st.selectbox("Selecione o Abastecimento para editar", [None] + list(fuel_map), key="edit_f_select")
+                selected_f_edit = st.selectbox("Selecione o Abastecimento para editar", [None] + list(fuel_map), key="edit_fuel_select")
                 if selected_f_edit:
                     f_data = fuel_map[selected_f_edit]
                     edit_v_obj = next((v for v in vehicles if v["id"] == f_data.get("vehicle_id")), None)
@@ -1946,7 +1946,7 @@ with tab_operations:
 
             with col_f2:
                 st.markdown("##### 🗑️ Excluir Abastecimento")
-                selected_f_del = st.selectbox("Selecione o Abastecimento para excluir", [None] + list(fuel_map), key="del_f_select")
+                selected_f_del = st.selectbox("Selecione o Abastecimento para excluir", [None] + list(fuel_map), key="del_fuel_select")
                 if selected_f_del:
                     f_del_data = fuel_map[selected_f_del]
                     st.error("⚠️ Atenção: Isso excluirá permanentemente o registro deste abastecimento.")
@@ -2251,7 +2251,7 @@ with tab_fines:
         with col_fe1:
             st.markdown("##### Editar Multa")
             fines_map = {f"{f.get('fine_date')} · {f.get('description')[:30]}... · R$ {as_number(f.get('amount')):.2f}": f for f in fines}
-            selected_fine_edit = st.selectbox("Selecione a Multa para editar", [None] + list(fines_map), key="edit_f_select")
+            selected_fine_edit = st.selectbox("Selecione a Multa para editar", [None] + list(fines_map), key="edit_fine_select")
             if selected_fine_edit:
                 fine_data = fines_map[selected_fine_edit]
                 d_curr = next((d for d in drivers if d["id"] == fine_data["driver_id"]), None)
@@ -2279,7 +2279,7 @@ with tab_fines:
                         
         with col_fe2:
             st.markdown("##### Excluir Multa")
-            selected_fine_del = st.selectbox("Selecione a Multa para excluir", [None] + list(fines_map), key="del_f_select")
+            selected_fine_del = st.selectbox("Selecione a Multa para excluir", [None] + list(fines_map), key="del_fine_select")
             if selected_fine_del:
                 fine_data = fines_map[selected_fine_del]
                 st.error(f"⚠️ Atenção: Isso excluirá permanentemente o registro desta multa.")
