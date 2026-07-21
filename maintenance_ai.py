@@ -105,27 +105,40 @@ def analyze_maintenance(
                 "à decisão e não substitui a inspeção de um profissional qualificado.'"
             )
 
+    clean_key = api_key.strip()
     if provider == "gemini":
         client = OpenAI(
-            api_key=api_key,
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+            api_key=clean_key,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai"
         )
-        model_name = "gemini-1.5-flash"
+        gemini_models = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-pro"]
+        last_err = None
+        for g_model in gemini_models:
+            try:
+                response = client.chat.completions.create(
+                    model=g_model,
+                    messages=[
+                        {"role": "system", "content": system_content},
+                        {"role": "user", "content": f"Analise os dados e monte o plano de manutenção desta frota/veículo:\n{context}"}
+                    ]
+                )
+                return response.choices[0].message.content or ""
+            except Exception as e:
+                last_err = e
+                err_text = str(e).lower()
+                if "404" in err_text or "not_found" in err_text:
+                    continue
+                raise e
+        if last_err:
+            raise last_err
     else:
-        client = OpenAI(api_key=api_key)
+        client = OpenAI(api_key=clean_key)
         model_name = "gpt-4o-mini"
-
-    response = client.chat.completions.create(
-        model=model_name,
-        messages=[
-            {
-                "role": "system",
-                "content": system_content
-            },
-            {
-                "role": "user",
-                "content": f"Analise os dados e monte o plano de manutenção desta frota/veículo:\n{context}"
-            }
-        ]
-    )
-    return response.choices[0].message.content or ""
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": f"Analise os dados e monte o plano de manutenção desta frota/veículo:\n{context}"}
+            ]
+        )
+        return response.choices[0].message.content or ""
