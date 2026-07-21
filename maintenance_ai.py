@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import requests
 from typing import Any
 
 from openai import OpenAI
@@ -165,27 +166,40 @@ def analyze_maintenance(
 
     clean_key = api_key.strip()
     if provider == "gemini":
-        client = OpenAI(
-            api_key=clean_key,
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai"
-        )
         gemini_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
         last_err = None
+        user_prompt = f"Analise os dados e monte o plano de manutenção desta frota/veículo:\n{context}"
+        
         for g_model in gemini_models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{g_model}:generateContent?key={clean_key}"
+            payload = {
+                "system_instruction": {"parts": [{"text": system_content}]},
+                "contents": [{"parts": [{"text": user_prompt}]}],
+                "generationConfig": {
+                    "maxOutputTokens": 1200,
+                    "temperature": 0.3
+                }
+            }
+            headers = {"Content-Type": "application/json"}
             try:
-                response = client.chat.completions.create(
-                    model=g_model,
-                    max_tokens=1200,
-                    messages=[
-                        {"role": "system", "content": system_content},
-                        {"role": "user", "content": f"Analise os dados e monte o plano de manutenção desta frota/veículo:\n{context}"}
-                    ]
-                )
-                return response.choices[0].message.content or ""
+                r = requests.post(url, headers=headers, json=payload, timeout=45)
+                if r.status_code == 200:
+                    res_data = r.json()
+                    candidates = res_data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        if parts:
+                            return parts[0].get("text", "")
+                    return ""
+                else:
+                    err_json = r.json() if "json" in r.headers.get("content-type", "").lower() else r.text
+                    last_err = Exception(f"Erro na API do Gemini (HTTP {r.status_code}): {err_json}")
+                    if r.status_code in (404, 400):
+                        continue
+                    raise last_err
             except Exception as e:
                 last_err = e
-                err_text = str(e).lower()
-                if "404" in err_text or "not_found" in err_text:
+                if "404" in str(e) or "400" in str(e):
                     continue
                 raise e
         if last_err:
