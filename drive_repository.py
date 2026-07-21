@@ -46,28 +46,36 @@ class DriveRepository:
 
     def _ensure_schema(self) -> None:
         with self.schema_lock:
-            conn = sqlite3.connect(self.db_path, timeout=30.0)
-            cursor = conn.cursor()
-            for table, columns in TABLES.items():
-                cols_def = []
-                for col in columns:
-                    if col == "id":
-                        cols_def.append("id TEXT PRIMARY KEY")
-                    else:
-                        cols_def.append(f"{col} TEXT")
-                cursor.execute(f"CREATE TABLE IF NOT EXISTS {table} ({', '.join(cols_def)})")
-                
-                # Verificação e migração automática de colunas faltantes em tabelas existentes
-                cursor.execute(f"PRAGMA table_info({table})")
-                existing_cols = {row[1] for row in cursor.fetchall()}
-                for col in columns:
-                    if col not in existing_cols:
-                        try:
-                            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
-                        except sqlite3.OperationalError:
-                            pass
-            conn.commit()
-            conn.close()
+            try:
+                conn = sqlite3.connect(self.db_path, timeout=30.0)
+                cursor = conn.cursor()
+                try:
+                    cursor.execute("PRAGMA journal_mode=WAL;")
+                except Exception:
+                    pass
+
+                for table, columns in TABLES.items():
+                    cols_def = []
+                    for col in columns:
+                        if col == "id":
+                            cols_def.append("id TEXT PRIMARY KEY")
+                        else:
+                            cols_def.append(f"{col} TEXT")
+                    cursor.execute(f"CREATE TABLE IF NOT EXISTS {table} ({', '.join(cols_def)})")
+                    
+                    # Verificação e migração automática de colunas faltantes em tabelas existentes
+                    cursor.execute(f"PRAGMA table_info({table})")
+                    existing_cols = {row[1] for row in cursor.fetchall()}
+                    for col in columns:
+                        if col not in existing_cols:
+                            try:
+                                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+                            except sqlite3.OperationalError:
+                                pass
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                print(f"Erro em _ensure_schema: {e}", flush=True)
 
     def _get_session(self) -> AuthorizedSession:
         scopes = ["https://www.googleapis.com/auth/drive"]
@@ -238,18 +246,21 @@ class DriveRepository:
             **{k: self._serialize(v) for k, v in values.items()},
         }
         
-        headers = TABLES[table]
-        for h in headers:
-            if h not in record:
-                record[h] = ""
-
-        columns_str = ", ".join(headers)
-        placeholders = ", ".join(["?"] * len(headers))
-        values_list = [record[h] for h in headers]
-
         conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
         try:
+            cursor.execute(f"PRAGMA table_info({table})")
+            db_cols = {row[1] for row in cursor.fetchall()}
+            headers = [h for h in TABLES[table] if h in db_cols]
+            
+            for h in headers:
+                if h not in record:
+                    record[h] = ""
+
+            columns_str = ", ".join(headers)
+            placeholders = ", ".join(["?"] * len(headers))
+            values_list = [record[h] for h in headers]
+
             cursor.execute(f"INSERT INTO {table} ({columns_str}) VALUES ({placeholders})", values_list)
             conn.commit()
         except sqlite3.OperationalError:
@@ -257,6 +268,15 @@ class DriveRepository:
             self._ensure_schema()
             conn = sqlite3.connect(self.db_path, timeout=30.0)
             cursor = conn.cursor()
+            cursor.execute(f"PRAGMA table_info({table})")
+            db_cols = {row[1] for row in cursor.fetchall()}
+            headers = [h for h in TABLES[table] if h in db_cols]
+            for h in headers:
+                if h not in record:
+                    record[h] = ""
+            columns_str = ", ".join(headers)
+            placeholders = ", ".join(["?"] * len(headers))
+            values_list = [record[h] for h in headers]
             cursor.execute(f"INSERT INTO {table} ({columns_str}) VALUES ({placeholders})", values_list)
             conn.commit()
         finally:
@@ -269,21 +289,32 @@ class DriveRepository:
         self._validate_table(table)
         self._ensure_schema()
         serialized_values = {k: self._serialize(v) for k, v in values.items()}
-        set_clause = ", ".join([f"{k} = ?" for k in serialized_values.keys()])
-        bind_values = list(serialized_values.values()) + [str(record_id)]
         
         conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
         try:
-            cursor.execute(f"UPDATE {table} SET {set_clause} WHERE id = ?", bind_values)
-            conn.commit()
+            cursor.execute(f"PRAGMA table_info({table})")
+            db_cols = {row[1] for row in cursor.fetchall()}
+            valid_values = {k: v for k, v in serialized_values.items() if k in db_cols}
+            
+            if valid_values:
+                set_clause = ", ".join([f"{k} = ?" for k in valid_values.keys()])
+                bind_values = list(valid_values.values()) + [str(record_id)]
+                cursor.execute(f"UPDATE {table} SET {set_clause} WHERE id = ?", bind_values)
+                conn.commit()
         except sqlite3.OperationalError:
             conn.close()
             self._ensure_schema()
             conn = sqlite3.connect(self.db_path, timeout=30.0)
             cursor = conn.cursor()
-            cursor.execute(f"UPDATE {table} SET {set_clause} WHERE id = ?", bind_values)
-            conn.commit()
+            cursor.execute(f"PRAGMA table_info({table})")
+            db_cols = {row[1] for row in cursor.fetchall()}
+            valid_values = {k: v for k, v in serialized_values.items() if k in db_cols}
+            if valid_values:
+                set_clause = ", ".join([f"{k} = ?" for k in valid_values.keys()])
+                bind_values = list(valid_values.values()) + [str(record_id)]
+                cursor.execute(f"UPDATE {table} SET {set_clause} WHERE id = ?", bind_values)
+                conn.commit()
         finally:
             conn.close()
         
@@ -362,8 +393,8 @@ class DriveRepository:
             backup_filename = f"frota_backup_{timestamp}.db"
             dest_path = os.path.join(backup_dir, backup_filename)
 
-            conn_src = sqlite3.connect(self.db_path)
-            conn_dst = sqlite3.connect(dest_path)
+            conn_src = sqlite3.connect(self.db_path, timeout=30.0)
+            conn_dst = sqlite3.connect(dest_path, timeout=30.0)
             with conn_dst:
                 conn_src.backup(conn_dst)
             conn_dst.close()
