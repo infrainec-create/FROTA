@@ -3189,7 +3189,9 @@ elif selected_module == "🤖 Analista IA":
     st.caption("Parecer automatizado gerado por Inteligência Artificial (OpenAI) baseado em dados históricos reais.")
     
     default_openai_key = secret("OPENAI_API_KEY") or repo.get_config("openai_api_key", "")
-    default_gemini_key = secret("GEMINI_API_KEY") or repo.get_config("gemini_api_key", "")
+    g_key_sec = secret("GEMINI_API_KEY") or ""
+    g_key_db = repo.get_config("gemini_api_key", "")
+    default_gemini_key = g_key_sec if g_key_sec.startswith("AIzaSy") else (g_key_db if g_key_db.startswith("AIzaSy") else (g_key_sec or g_key_db))
     
     ai_provider = st.selectbox(
         "🤖 Provedor de Inteligência Artificial",
