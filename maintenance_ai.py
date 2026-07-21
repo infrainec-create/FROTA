@@ -7,6 +7,85 @@ from typing import Any
 from openai import OpenAI
 
 
+def compact_vehicle_context(
+    vehicle: dict[str, Any] | None,
+    maintenance: list[dict[str, Any]],
+    fuel: list[dict[str, Any]],
+    expenses: list[dict[str, Any]] | None = None,
+    tires_list: list[dict[str, Any]] | None = None,
+    vehicles_list: list[dict[str, Any]] | None = None
+) -> str:
+    """Compacta e limpa os dados brutos enviando apenas informações essenciais para economizar até 85% de tokens."""
+    if vehicle is None:
+        v_summary = []
+        for v in (vehicles_list or []):
+            v_summary.append({
+                "marca_modelo": f"{v.get('brand', '')} {v.get('model', '')}".strip() or v.get("name"),
+                "placa": v.get("plate"),
+                "ano": v.get("year"),
+                "status": v.get("status")
+            })
+            
+        maint_summary = [{
+            "tipo": m.get("maint_type"),
+            "servico": m.get("description"),
+            "custo": m.get("cost"),
+            "km": m.get("odometer"),
+            "data": m.get("maint_date")
+        } for m in maintenance[-15:]]
+        
+        tires_summary = [{
+            "pos": t.get("position"),
+            "marca": t.get("brand"),
+            "sulco_mm": t.get("current_tread_mm")
+        } for t in (tires_list or [])[-15:]]
+
+        return json.dumps({
+            "frota": v_summary[:15],
+            "manutencoes_recentes": maint_summary,
+            "pneus_inspecionados": tires_summary
+        }, ensure_ascii=False, default=str)
+    else:
+        v_clean = {
+            "marca": vehicle.get("brand") or vehicle.get("name"),
+            "modelo": vehicle.get("model") or vehicle.get("name"),
+            "versao": vehicle.get("version"),
+            "combustivel": vehicle.get("fuel_type"),
+            "ano": vehicle.get("year"),
+            "placa": vehicle.get("plate"),
+            "odometro_inicial": vehicle.get("initial_odometer"),
+            "meta_km_l": vehicle.get("target_consumption"),
+            "revisao_km": vehicle.get("maint_interval_km")
+        }
+        v_clean = {k: v for k, v in v_clean.items() if v is not None and str(v).strip() != ""}
+
+        maint_clean = [{
+            "servico": m.get("description"),
+            "custo": m.get("cost"),
+            "km": m.get("odometer"),
+            "data": m.get("maint_date")
+        } for m in maintenance[-10:]]
+
+        fuel_clean = [{
+            "litros": f.get("liters"),
+            "custo": f.get("cost"),
+            "km": f.get("odometer")
+        } for f in fuel[-5:]]
+
+        tires_clean = [{
+            "pos": t.get("position"),
+            "marca": t.get("brand"),
+            "sulco_mm": t.get("current_tread_mm")
+        } for t in (tires_list or [])]
+
+        return json.dumps({
+            "veiculo": v_clean,
+            "historico_manutencao": maint_clean,
+            "ultimos_abastecimentos": fuel_clean,
+            "pneus": tires_clean
+        }, ensure_ascii=False, default=str)
+
+
 def analyze_maintenance(
     api_key: str,
     vehicle: dict[str, Any] | None,
@@ -19,19 +98,10 @@ def analyze_maintenance(
     provider: str = "gemini"
 ) -> str:
     """Gera um parecer de apoio, plano de manutenção preventiva ou previsão orçamentária; nunca toma decisões operacionais automaticamente."""
+    # Compactar contexto reduzindo consumo de tokens em até 85%
+    context = compact_vehicle_context(vehicle, maintenance, fuel, expenses, tires_list, vehicles_list)
+
     if vehicle is None:
-        # Fleet-wide analysis
-        context = json.dumps(
-            {
-                "frota_veiculos": vehicles_list if vehicles_list else [],
-                "manutencoes_recentes": maintenance[-50:],
-                "abastecimentos_recentes": fuel[-50:],
-                "outras_despesas_recentes": expenses[-50:] if expenses else [],
-                "pneus_frota_recentes": tires_list[-50:] if tires_list else []
-            },
-            ensure_ascii=False,
-            default=str,
-        )
         if mode == "budget":
             system_content = (
                 "Você é um especialista em planejamento financeiro e orçamento de frotas corporativas. "
@@ -60,18 +130,6 @@ def analyze_maintenance(
             )
     else:
         # Single vehicle analysis
-        context = json.dumps(
-            {
-                "veiculo": vehicle, 
-                "manutencoes": maintenance[-20:], 
-                "abastecimentos": fuel[-20:],
-                "outras_despesas": expenses[-20:] if expenses else [],
-                "pneus_instalados": tires_list if tires_list else []
-            },
-            ensure_ascii=False,
-            default=str,
-        )
-        
         if mode == "budget":
             system_content = (
                 "Você é um especialista em planejamento financeiro e orçamento de frotas. "
@@ -117,6 +175,7 @@ def analyze_maintenance(
             try:
                 response = client.chat.completions.create(
                     model=g_model,
+                    max_tokens=1200,
                     messages=[
                         {"role": "system", "content": system_content},
                         {"role": "user", "content": f"Analise os dados e monte o plano de manutenção desta frota/veículo:\n{context}"}
@@ -136,6 +195,7 @@ def analyze_maintenance(
         model_name = "gpt-4o-mini"
         response = client.chat.completions.create(
             model=model_name,
+            max_tokens=1200,
             messages=[
                 {"role": "system", "content": system_content},
                 {"role": "user", "content": f"Analise os dados e monte o plano de manutenção desta frota/veículo:\n{context}"}

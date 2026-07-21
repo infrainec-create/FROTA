@@ -641,6 +641,11 @@ html, body, [class*="css"] {{
 """, unsafe_allow_html=True)
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def cached_ai_analysis(api_key: str, v_key: str, mode_val: str, provider_val: str, v_obj: dict | None, maint_l: list, fuel_l: list, v_list: list, exp_l: list, tires_l: list) -> str:
+    return analyze_maintenance(api_key, v_obj, maint_l, fuel_l, mode=mode_val, vehicles_list=v_list, expenses=exp_l, tires_list=tires_l, provider=provider_val)
+
+
 def as_number(value: Any) -> float:
     if value is None:
         return 0.0
@@ -3247,15 +3252,10 @@ elif selected_module == "🤖 Analista IA":
                         fuel_list = [f for f in fuel if f.get("vehicle_id") == vehicle["id"]]
                         tires_sub = [t for t in tires if t.get("vehicle_id") == vehicle["id"]]
                         
-                    answer = analyze_maintenance(
-                        str(api_key), vehicle,
-                        maint_list,
-                        fuel_list,
-                        mode=mode_val,
-                        vehicles_list=vehicles,
-                        expenses=exp_list,
-                        tires_list=tires_sub,
-                        provider=provider_val
+                    v_id_key = vehicle["id"] if vehicle else "ALL_FLEET"
+                    answer = cached_ai_analysis(
+                        str(api_key), v_id_key, mode_val, provider_val,
+                        vehicle, maint_list, fuel_list, vehicles, exp_list, tires_sub
                     )
                     
                     low_answer = answer.lower()
