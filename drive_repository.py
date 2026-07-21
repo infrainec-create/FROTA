@@ -36,26 +36,38 @@ class DriveRepository:
         self.db_path = "frota_drive.db"
         self.drive_file_id = None
         self.upload_lock = threading.Lock()
+        self.schema_lock = threading.Lock()
 
         # 1. Tenta baixar o arquivo do Drive se as credenciais existirem
         self._download_from_drive()
 
-        # 2. Garante que as tabelas SQL estão criadas localmente
+        # 2. Garante que as tabelas e colunas SQL estão criadas e atualizadas localmente
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        for table, columns in TABLES.items():
-            cols_def = []
-            for col in columns:
-                if col == "id":
-                    cols_def.append("id TEXT PRIMARY KEY")
-                else:
-                    cols_def.append(f"{col} TEXT")
-            cursor.execute(f"CREATE TABLE IF NOT EXISTS {table} ({', '.join(cols_def)})")
-        conn.commit()
-        conn.close()
+        with self.schema_lock:
+            conn = sqlite3.connect(self.db_path, timeout=30.0)
+            cursor = conn.cursor()
+            for table, columns in TABLES.items():
+                cols_def = []
+                for col in columns:
+                    if col == "id":
+                        cols_def.append("id TEXT PRIMARY KEY")
+                    else:
+                        cols_def.append(f"{col} TEXT")
+                cursor.execute(f"CREATE TABLE IF NOT EXISTS {table} ({', '.join(cols_def)})")
+                
+                # Verificação e migração automática de colunas faltantes em tabelas existentes
+                cursor.execute(f"PRAGMA table_info({table})")
+                existing_cols = {row[1] for row in cursor.fetchall()}
+                for col in columns:
+                    if col not in existing_cols:
+                        try:
+                            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+                        except sqlite3.OperationalError:
+                            pass
+            conn.commit()
+            conn.close()
 
     def _get_session(self) -> AuthorizedSession:
         scopes = ["https://www.googleapis.com/auth/drive"]
@@ -82,6 +94,7 @@ class DriveRepository:
                     if dl_res.status_code == 200:
                         with open(self.db_path, "wb") as f:
                             f.write(dl_res.content)
+                        self._ensure_schema()
         except Exception as e:
             print(f"Erro ao baixar do Drive: {e}", flush=True)
 
@@ -136,7 +149,7 @@ class DriveRepository:
                         try:
                             # 1. Determina o próximo slot
                             ultimo_slot = 1
-                            conn = sqlite3.connect(self.db_path)
+                            conn = sqlite3.connect(self.db_path, timeout=30.0)
                             cursor = conn.cursor()
                             try:
                                 cursor.execute("SELECT value FROM config WHERE key = 'ultimo_backup_slot'")
@@ -197,16 +210,28 @@ class DriveRepository:
 
     def list(self, table: str) -> list[dict[str, Any]]:
         self._validate_table(table)
-        conn = sqlite3.connect(self.db_path)
+        self._ensure_schema()
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute(f"SELECT * FROM {table}")
-        rows = [dict(row) for row in cursor.fetchall()]
-        conn.close()
+        try:
+            cursor.execute(f"SELECT * FROM {table}")
+            rows = [dict(row) for row in cursor.fetchall()]
+        except sqlite3.OperationalError:
+            conn.close()
+            self._ensure_schema()
+            conn = sqlite3.connect(self.db_path, timeout=30.0)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT * FROM {table}")
+            rows = [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
         return rows
 
     def add(self, table: str, values: dict[str, Any]) -> dict[str, Any]:
         self._validate_table(table)
+        self._ensure_schema()
         record = {
             "id": str(uuid4()),
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -218,45 +243,75 @@ class DriveRepository:
             if h not in record:
                 record[h] = ""
 
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        placeholders = ", ".join(["?"] * len(headers))
         columns_str = ", ".join(headers)
+        placeholders = ", ".join(["?"] * len(headers))
         values_list = [record[h] for h in headers]
-        
-        cursor.execute(f"INSERT INTO {table} ({columns_str}) VALUES ({placeholders})", values_list)
-        conn.commit()
-        conn.close()
+
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        cursor = conn.cursor()
+        try:
+            cursor.execute(f"INSERT INTO {table} ({columns_str}) VALUES ({placeholders})", values_list)
+            conn.commit()
+        except sqlite3.OperationalError:
+            conn.close()
+            self._ensure_schema()
+            conn = sqlite3.connect(self.db_path, timeout=30.0)
+            cursor = conn.cursor()
+            cursor.execute(f"INSERT INTO {table} ({columns_str}) VALUES ({placeholders})", values_list)
+            conn.commit()
+        finally:
+            conn.close()
         
         self._upload_to_drive()
         return record
 
     def update(self, table: str, record_id: str, values: dict[str, Any]) -> None:
         self._validate_table(table)
+        self._ensure_schema()
         serialized_values = {k: self._serialize(v) for k, v in values.items()}
         set_clause = ", ".join([f"{k} = ?" for k in serialized_values.keys()])
         bind_values = list(serialized_values.values()) + [str(record_id)]
         
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
-        cursor.execute(f"UPDATE {table} SET {set_clause} WHERE id = ?", bind_values)
-        conn.commit()
-        conn.close()
+        try:
+            cursor.execute(f"UPDATE {table} SET {set_clause} WHERE id = ?", bind_values)
+            conn.commit()
+        except sqlite3.OperationalError:
+            conn.close()
+            self._ensure_schema()
+            conn = sqlite3.connect(self.db_path, timeout=30.0)
+            cursor = conn.cursor()
+            cursor.execute(f"UPDATE {table} SET {set_clause} WHERE id = ?", bind_values)
+            conn.commit()
+        finally:
+            conn.close()
         
         self._upload_to_drive()
 
     def delete(self, table: str, record_id: str) -> None:
         self._validate_table(table)
-        conn = sqlite3.connect(self.db_path)
+        self._ensure_schema()
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
-        cursor.execute(f"DELETE FROM {table} WHERE id = ?", (str(record_id),))
-        conn.commit()
-        conn.close()
+        try:
+            cursor.execute(f"DELETE FROM {table} WHERE id = ?", (str(record_id),))
+            conn.commit()
+        except sqlite3.OperationalError:
+            conn.close()
+            self._ensure_schema()
+            conn = sqlite3.connect(self.db_path, timeout=30.0)
+            cursor = conn.cursor()
+            cursor.execute(f"DELETE FROM {table} WHERE id = ?", (str(record_id),))
+            conn.commit()
+        finally:
+            conn.close()
         
         self._upload_to_drive()
 
     def clear_all_data(self) -> None:
-        conn = sqlite3.connect(self.db_path)
+        self._ensure_schema()
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
         for table in TABLES.keys():
             cursor.execute(f"DELETE FROM {table}")
@@ -265,23 +320,35 @@ class DriveRepository:
         self._upload_to_drive()
 
     def get_config(self, key: str, default: Any = None) -> str:
-        conn = sqlite3.connect(self.db_path)
+        self._ensure_schema()
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
         try:
             cursor.execute("SELECT value FROM config WHERE key = ?", (key,))
             row = cursor.fetchone()
-            val = row[0] if row else default
+            val = row[0] if row is not None and len(row) > 0 else default
         except sqlite3.OperationalError:
             val = default
-        conn.close()
-        return val
+        finally:
+            conn.close()
+        return val if val is not None else default
 
     def set_config(self, key: str, value: Any) -> None:
-        conn = sqlite3.connect(self.db_path)
+        self._ensure_schema()
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
-        cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, str(value)))
-        conn.commit()
-        conn.close()
+        try:
+            cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, str(value)))
+            conn.commit()
+        except sqlite3.OperationalError:
+            conn.close()
+            self._ensure_schema()
+            conn = sqlite3.connect(self.db_path, timeout=30.0)
+            cursor = conn.cursor()
+            cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, str(value)))
+            conn.commit()
+        finally:
+            conn.close()
         self._upload_to_drive()
 
     def _backup_local(self) -> None:

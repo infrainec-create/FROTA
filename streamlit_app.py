@@ -44,6 +44,7 @@ def get_repository() -> DriveRepository:
 
 
 repo = get_repository()
+repo._ensure_schema()
 
 # Garantir que a instância em cache do repositório está atualizada
 try:
