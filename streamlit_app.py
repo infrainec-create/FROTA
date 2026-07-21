@@ -613,11 +613,23 @@ def as_number(value: Any) -> float:
 
 
 def vehicle_label(vehicle: dict[str, Any]) -> str:
-    return f"{vehicle['name']} · {vehicle['plate']}"
+    brand = str(vehicle.get("brand") or "").strip()
+    model = str(vehicle.get("model") or "").strip()
+    plate = str(vehicle.get("plate") or "").strip()
+    name = str(vehicle.get("name") or "").strip()
+    if brand and model:
+        return f"{brand} {model} · {plate}"
+    elif name:
+        return f"{name} · {plate}"
+    return f"Veículo · {plate}"
 
 
-def vehicle_odometer(vehicle_id: str, fuel: list[dict[str, Any]], maintenance: list[dict[str, Any]], checkins: list[dict[str, Any]]) -> float:
+def vehicle_odometer(vehicle_id: str, fuel: list[dict[str, Any]], maintenance: list[dict[str, Any]], checkins: list[dict[str, Any]], vehicles: list[dict[str, Any]] | None = None) -> float:
     values = []
+    if vehicles:
+        v_obj = next((v for v in vehicles if v["id"] == vehicle_id), None)
+        if v_obj and v_obj.get("initial_odometer"):
+            values.append(as_number(v_obj.get("initial_odometer")))
     for item in fuel + maintenance:
         if item.get("vehicle_id") == vehicle_id:
             values.append(as_number(item.get("odometer")))
@@ -1531,14 +1543,14 @@ with tab_vehicles:
                 v_rows = []
                 for v in vehicles:
                     v_id = v["id"]
-                    odo_curr = vehicle_odometer(v_id, fuel, maintenance, checkins)
+                    odo_curr = vehicle_odometer(v_id, fuel, maintenance, checkins, vehicles)
                     
                     v_fuel = [f for f in fuel if f.get("vehicle_id") == v_id]
                     v_maint = [m for m in maintenance if m.get("vehicle_id") == v_id]
                     v_checkins = [c for c in checkins if c.get("vehicle_id") == v_id]
                     v_exp = [e for e in expenses if e.get("vehicle_id") == v_id]
                     
-                    odos = []
+                    odos = [as_number(v.get("initial_odometer"))] if v.get("initial_odometer") else []
                     for item in v_fuel + v_maint:
                         odos.append(as_number(item.get("odometer")))
                     for item in v_checkins:
@@ -1548,12 +1560,16 @@ with tab_vehicles:
                     tot_cost = sum(as_number(f.get("cost")) for f in v_fuel) + sum(as_number(m.get("cost")) for m in v_maint) + sum(as_number(e.get("cost")) for e in v_exp)
                     cpk_val = tot_cost / km_run if km_run > 0 else 0.0
                     
+                    brand_mod = f"{v.get('brand', '')} {v.get('model', '')}".strip() or v.get("name", "")
                     v_rows.append({
-                        "Modelo/Nome": v.get("name", ""),
+                        "Marca / Modelo": brand_mod,
+                        "Versão / Motor": v.get("version", "-"),
                         "Placa": v.get("plate", ""),
+                        "Combustível": v.get("fuel_type", "-"),
                         "Ano": v.get("year", ""),
                         "Status": v.get("status", ""),
                         "Odômetro": f"{odo_curr:,.0f} km",
+                        "Meta (km/L)": f"{as_number(v.get('target_consumption')):,.1f} km/L" if v.get('target_consumption') else "-",
                         "Custo/KM (CPK)": f"R$ {cpk_val:.2f}/km" if cpk_val > 0 else "-",
                         "IPVA": v.get("ipva_expiry", ""),
                         "Seguro": v.get("insurance_expiry", "")
@@ -1663,29 +1679,60 @@ with tab_vehicles:
     with v_tab_create:
         col_c1, col_c2 = st.columns(2)
         with col_c1:
-            st.markdown("##### Cadastrar Veículo")
+            st.markdown("##### 🚗 Cadastrar Veículo (Ficha Técnica Completa)")
             with st.form("new_vehicle", clear_on_submit=True):
-                name = st.text_input("Modelo / nome")
+                st.markdown("###### 📌 Identificação & Modelo")
+                brands = ["Chevrolet", "Fiat", "Toyota", "Volkswagen", "Ford", "Hyundai", "Renault", "Honda", "Nissan", "Jeep", "Mitsubishi", "Mercedes-Benz", "Volvo", "Scania", "Outra"]
+                brand = st.selectbox("Marca / Fabricante", brands)
+                model = st.text_input("Modelo (ex: S10, Hilux, Toro, Gol)")
+                name_alias = st.text_input("Apelido / Nome do Veículo (Opcional)", placeholder="Ex: S10 Diretoria")
+                version = st.text_input("Versão / Motorização", placeholder="Ex: 2.8 Turbo Diesel High Country")
                 plate = st.text_input("Placa").upper().strip()
-                year = st.number_input("Ano", 1900, 2100, value=date.today().year)
-                status = st.selectbox("Situação", ["Disponível", "Em uso", "Manutenção", "Inativo"])
+                year = st.number_input("Ano Fabricação/Modelo", 1900, 2100, value=date.today().year)
+                
+                st.markdown("###### ⚙️ Especificações Operacionais")
+                fuel_types = ["Diesel S10", "Diesel S500", "Flex (Gasolina/Etanol)", "Gasolina", "Etanol", "Elétrico", "Híbrido", "GNV"]
+                fuel_type = st.selectbox("Tipo de Combustível Principal", fuel_types)
+                categories = ["Picape / Utilitário", "Carga / Caminhão", "Passeio / SUV", "Van / Passageiros", "Motocicleta", "Outros"]
+                category = st.selectbox("Categoria / Carroceria", categories)
+                status = st.selectbox("Situação Inicial", ["Disponível", "Em uso", "Manutenção", "Inativo"])
+                
+                initial_odometer = st.number_input("Odômetro Inicial (KM no Cadastro)", min_value=0.0, step=100.0)
+                target_consumption = st.number_input("Meta de Consumo Esperado (km/L)", min_value=0.0, value=10.0, step=0.5)
+                maint_interval_km = st.number_input("Intervalo de Revisão (KM)", min_value=1000, value=10000, step=1000)
+
+                st.markdown("###### 📜 Documentação & Fiscal")
+                renavam = st.text_input("Código RENAVAM (Opcional)")
+                chassis = st.text_input("Número do Chassi (Opcional)")
                 ipva_exp = st.date_input("Vencimento do IPVA (Opcional)", value=None)
                 ins_exp = st.date_input("Vencimento do Seguro (Opcional)", value=None)
-                if st.form_submit_button("Salvar veículo"):
-                    if not name or not plate:
-                        st.error("Informe nome e placa.")
+
+                if st.form_submit_button("Salvar Veículo", type="primary", use_container_width=True):
+                    if not plate or not model.strip():
+                        st.error("Informe modelo e placa do veículo.")
                     elif any(v.get("plate") == plate for v in vehicles):
                         st.error("Esta placa já está cadastrada.")
                     else:
+                        full_name = name_alias.strip() or f"{brand} {model}".strip() or "Veículo"
                         repo.add("vehicles", {
-                            "name": name.strip(),
+                            "name": full_name,
+                            "brand": brand,
+                            "model": model.strip(),
+                            "version": version.strip(),
+                            "fuel_type": fuel_type,
+                            "category": category,
                             "plate": plate,
                             "year": year,
+                            "renavam": renavam.strip(),
+                            "chassis": chassis.strip(),
+                            "initial_odometer": initial_odometer,
+                            "target_consumption": target_consumption,
+                            "maint_interval_km": maint_interval_km,
                             "status": status,
                             "ipva_expiry": ipva_exp.isoformat() if ipva_exp else "",
                             "insurance_expiry": ins_exp.isoformat() if ins_exp else ""
                         })
-                        log_action("Cadastro de Veículo", f"Veículo {name} ({plate}) cadastrado.")
+                        log_action("Cadastro de Veículo", f"Veículo {brand} {model} ({plate}) cadastrado com sucesso.")
                         st.cache_data.clear()
                         st.success("Veículo salvo com sucesso!")
                         st.rerun()
@@ -1710,9 +1757,9 @@ with tab_vehicles:
     with v_tab_edit:
         col_e1, col_e2 = st.columns(2)
         with col_e1:
-            st.markdown("##### Editar Veículo")
+            st.markdown("##### ✏️ Editar Ficha Técnica do Veículo")
             by_label = {vehicle_label(v): v for v in vehicles}
-            selected_v_edit = st.selectbox("Selecione o veículo", [None] + list(by_label), key="edit_v_select")
+            selected_v_edit = st.selectbox("Selecione o veículo para editar", [None] + list(by_label), key="edit_v_select")
             if selected_v_edit:
                 v_data = by_label[selected_v_edit]
                 
@@ -1720,24 +1767,56 @@ with tab_vehicles:
                 ins_curr = date.fromisoformat(v_data["insurance_expiry"]) if v_data.get("insurance_expiry") else None
                 
                 with st.form("form_edit_vehicle"):
-                    edit_name = st.text_input("Modelo / nome", value=v_data.get("name", ""))
+                    brands = ["Chevrolet", "Fiat", "Toyota", "Volkswagen", "Ford", "Hyundai", "Renault", "Honda", "Nissan", "Jeep", "Mitsubishi", "Mercedes-Benz", "Volvo", "Scania", "Outra"]
+                    c_brand = v_data.get("brand", "Chevrolet")
+                    edit_brand = st.selectbox("Marca / Fabricante", brands, index=brands.index(c_brand) if c_brand in brands else 0, key="edit_brand_sel")
+                    edit_model = st.text_input("Modelo", value=v_data.get("model", v_data.get("name", "")), key="edit_model_val")
+                    edit_name = st.text_input("Apelido / Nome", value=v_data.get("name", ""), key="edit_name_val")
+                    edit_version = st.text_input("Versão / Motorização", value=v_data.get("version", ""), key="edit_version_val")
                     edit_plate = st.text_input("Placa", value=v_data.get("plate", "")).upper().strip()
-                    edit_year = st.number_input("Ano", 1900, 2100, value=int(as_number(v_data.get("year")) or date.today().year))
-                    edit_status = st.selectbox("Situação", ["Disponível", "Em uso", "Manutenção", "Inativo"], index=["Disponível", "Em uso", "Manutenção", "Inativo"].index(v_data.get("status", "Disponível")))
-                    edit_ipva = st.date_input("Vencimento do IPVA", value=ipva_curr)
-                    edit_ins = st.date_input("Vencimento do Seguro", value=ins_curr)
-                    if st.form_submit_button("Salvar Alterações"):
+                    edit_year = st.number_input("Ano", 1900, 2100, value=int(as_number(v_data.get("year")) or date.today().year), key="edit_year_val")
+                    
+                    fuel_types = ["Diesel S10", "Diesel S500", "Flex (Gasolina/Etanol)", "Gasolina", "Etanol", "Elétrico", "Híbrido", "GNV"]
+                    c_fuel = v_data.get("fuel_type", "Diesel S10")
+                    edit_fuel = st.selectbox("Tipo de Combustível", fuel_types, index=fuel_types.index(c_fuel) if c_fuel in fuel_types else 0, key="edit_fuel_sel")
+                    
+                    categories = ["Picape / Utilitário", "Carga / Caminhão", "Passeio / SUV", "Van / Passageiros", "Motocicleta", "Outros"]
+                    c_cat = v_data.get("category", "Picape / Utilitário")
+                    edit_category = st.selectbox("Categoria", categories, index=categories.index(c_cat) if c_cat in categories else 0, key="edit_cat_sel")
+                    
+                    edit_status = st.selectbox("Situação", ["Disponível", "Em uso", "Manutenção", "Inativo"], index=["Disponível", "Em uso", "Manutenção", "Inativo"].index(v_data.get("status", "Disponível")), key="edit_stat_sel")
+                    edit_init_odo = st.number_input("Odômetro Inicial (KM)", min_value=0.0, step=100.0, value=float(as_number(v_data.get("initial_odometer"))), key="edit_init_odo_val")
+                    edit_target_cons = st.number_input("Meta Consumo (km/L)", min_value=0.0, step=0.5, value=float(as_number(v_data.get("target_consumption")) or 10.0), key="edit_target_cons_val")
+                    edit_maint_inter = st.number_input("Intervalo Revisão (KM)", min_value=1000, step=1000, value=int(as_number(v_data.get("maint_interval_km")) or 10000), key="edit_maint_inter_val")
+                    
+                    edit_renavam = st.text_input("Código RENAVAM", value=v_data.get("renavam", ""), key="edit_renavam_val")
+                    edit_chassis = st.text_input("Chassi", value=v_data.get("chassis", ""), key="edit_chassis_val")
+                    edit_ipva = st.date_input("Vencimento do IPVA", value=ipva_curr, key="edit_ipva_val")
+                    edit_ins = st.date_input("Vencimento do Seguro", value=ins_curr, key="edit_ins_val")
+                    
+                    if st.form_submit_button("Salvar Alterações do Veículo", type="primary"):
+                        full_name = edit_name.strip() or f"{edit_brand} {edit_model}".strip() or "Veículo"
                         repo.update("vehicles", v_data["id"], {
-                            "name": edit_name.strip(),
+                            "name": full_name,
+                            "brand": edit_brand,
+                            "model": edit_model.strip(),
+                            "version": edit_version.strip(),
+                            "fuel_type": edit_fuel,
+                            "category": edit_category,
                             "plate": edit_plate,
                             "year": edit_year,
+                            "renavam": edit_renavam.strip(),
+                            "chassis": edit_chassis.strip(),
+                            "initial_odometer": edit_init_odo,
+                            "target_consumption": edit_target_cons,
+                            "maint_interval_km": edit_maint_inter,
                             "status": edit_status,
                             "ipva_expiry": edit_ipva.isoformat() if edit_ipva else "",
                             "insurance_expiry": edit_ins.isoformat() if edit_ins else ""
                         })
-                        log_action("Edição de Veículo", f"Veículo {edit_name} ({edit_plate}) atualizado.")
+                        log_action("Edição de Veículo", f"Veículo {edit_brand} {edit_model} ({edit_plate}) atualizado.")
                         st.cache_data.clear()
-                        st.success("Veículo atualizado!")
+                        st.success("Ficha técnica do veículo atualizada com sucesso!")
                         st.rerun()
                         
         with col_e2:

@@ -15,7 +15,7 @@ from google.auth.transport.requests import AuthorizedSession
 
 TABLES: dict[str, list[str]] = {
     "users": ["id", "username", "password", "name", "security_question", "security_answer", "created_at"],
-    "vehicles": ["id", "name", "plate", "year", "status", "ipva_expiry", "insurance_expiry", "created_at"],
+    "vehicles": ["id", "name", "brand", "model", "version", "fuel_type", "category", "plate", "year", "renavam", "chassis", "initial_odometer", "target_consumption", "maint_interval_km", "status", "ipva_expiry", "insurance_expiry", "created_at"],
     "drivers": ["id", "name", "phone", "license", "license_expiry", "status", "created_at"],
     "maintenance": ["id", "vehicle_id", "description", "cost", "maint_date", "odometer", "maint_type", "created_at"],
     "fuel": ["id", "vehicle_id", "liters", "cost", "fuel_date", "odometer", "created_at"],
