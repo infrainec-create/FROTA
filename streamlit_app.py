@@ -19,9 +19,11 @@ def apply_premium_chart_theme(fig):
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Source Sans Pro, Inter, sans-serif"),
+        font=dict(family="Inter, Roboto, sans-serif", size=12),
         xaxis=dict(gridcolor="rgba(128, 128, 128, 0.12)", zeroline=False),
         yaxis=dict(gridcolor="rgba(128, 128, 128, 0.12)", zeroline=False),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        hoverlabel=dict(bgcolor="rgba(20, 20, 20, 0.85)", font_size=12, font_family="Inter, sans-serif")
     )
     return fig
 
@@ -956,7 +958,24 @@ with tab_dashboard:
     total_expenses = sum(as_number(e.get("cost")) for e in filtered_expenses)
     total_cost = total_maint + total_fuel + total_fines + total_expenses
     
-    col_a, col_b, col_c, col_d = st.columns(4)
+    # Cálculo de CPK Médio da Frota no período
+    fleet_total_km = 0.0
+    for v in vehicles:
+        v_id = v["id"]
+        v_f = [f for f in filtered_fuel if f.get("vehicle_id") == v_id]
+        v_m = [m for m in filtered_maint if m.get("vehicle_id") == v_id]
+        v_c = [c for c in checkins if c.get("vehicle_id") == v_id]
+        odos = []
+        for item in v_f + v_m:
+            odos.append(as_number(item.get("odometer")))
+        for item in v_c:
+            odos.extend([as_number(item.get("odometer_start")), as_number(item.get("odometer_end"))])
+        if len(odos) >= 2:
+            fleet_total_km += (max(odos) - min(odos))
+            
+    fleet_avg_cpk = total_cost / fleet_total_km if fleet_total_km > 0 else 0.0
+    
+    col_a, col_b, col_c, col_d, col_e = st.columns(5)
     with col_a:
         st.markdown(f"""
         <div class="kpi-card">
@@ -985,11 +1004,22 @@ with tab_dashboard:
             <div class="kpi-value" style="color: #3b82f6;">R$ {total_cost:,.2f}</div>
         </div>
         """, unsafe_allow_html=True)
+    with col_e:
+        st.markdown(f"""
+        <div class="kpi-card">
+            <div class="kpi-title">Custo Médio CPK</div>
+            <div class="kpi-value" style="color: #8b5cf6;">{"R$ " + f"{fleet_avg_cpk:.2f}/km" if fleet_avg_cpk > 0 else "-"}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    st.markdown("### 🔔 Alertas e Notificações (CNH, IPVA, Seguro e Manutenção)")
+    st.markdown("### 🔔 Central de Alertas de Vencimentos (IPVA, Seguro, CNH e Manutenção)")
     alerts = []
     today = date.today()
     in_30_days = today + timedelta(days=30)
+    
+    count_vencidos = 0
+    count_atencao = 0
+    count_maint = 0
     
     # Vehicle Expiration & Maintenance Alerts using the custom threshold setting
     for vehicle in vehicles:
@@ -997,6 +1027,7 @@ with tab_dashboard:
         history = [as_number(m.get("odometer")) for m in maintenance if m.get("vehicle_id") == vehicle["id"]]
         if current >= maint_limit_km and (not history or current - max(history) >= maint_limit_km):
             alerts.append(f"🔧 **Manutenção Preventiva**: {vehicle_label(vehicle)} necessita de revisão (limite: {maint_limit_km:,} km, odômetro atual: **{current:,.0f} km**).")
+            count_maint += 1
         
         # IPVA Alert
         ipva_str = vehicle.get("ipva_expiry")
@@ -1005,8 +1036,10 @@ with tab_dashboard:
                 ipva_dt = date.fromisoformat(ipva_str)
                 if ipva_dt <= today:
                     alerts.append(f"🔴 **IPVA Vencido**: O IPVA do veículo **{vehicle_label(vehicle)}** venceu em {ipva_dt.strftime('%d/%m/%Y')}!")
+                    count_vencidos += 1
                 elif ipva_dt <= in_30_days:
                     alerts.append(f"⚠️ **IPVA Próximo do Vencimento**: O IPVA do veículo **{vehicle_label(vehicle)}** vence em {ipva_dt.strftime('%d/%m/%Y')}.")
+                    count_atencao += 1
             except ValueError:
                 pass
                 
@@ -1017,8 +1050,10 @@ with tab_dashboard:
                 ins_dt = date.fromisoformat(ins_str)
                 if ins_dt <= today:
                     alerts.append(f"🔴 **Seguro Vencido**: O seguro do veículo **{vehicle_label(vehicle)}** venceu em {ins_dt.strftime('%d/%m/%Y')}!")
+                    count_vencidos += 1
                 elif ins_dt <= in_30_days:
                     alerts.append(f"⚠️ **Seguro Próximo do Vencimento**: O seguro do veículo **{vehicle_label(vehicle)}** vence em {ins_dt.strftime('%d/%m/%Y')}.")
+                    count_atencao += 1
             except ValueError:
                 pass
 
@@ -1030,10 +1065,26 @@ with tab_dashboard:
                 exp_dt = date.fromisoformat(expiry_str)
                 if exp_dt <= today:
                     alerts.append(f"🔴 **CNH Vencida**: A CNH de **{driver['name']}** venceu em {exp_dt.strftime('%d/%m/%Y')}!")
+                    count_vencidos += 1
                 elif exp_dt <= in_30_days:
                     alerts.append(f"⚠️ **CNH Próxima do Vencimento**: A CNH de **{driver['name']}** vence em {exp_dt.strftime('%d/%m/%Y')}.")
+                    count_atencao += 1
             except ValueError:
                 pass
+    
+    st.markdown(f"""
+    <div style="display: flex; gap: 12px; margin-bottom: 15px; flex-wrap: wrap;">
+        <span style="background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #ef4444; padding: 6px 14px; border-radius: 20px; font-weight: 600; font-size: 0.88rem;">
+            🔴 {count_vencidos} Documento(s) Vencido(s)
+        </span>
+        <span style="background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: #f59e0b; padding: 6px 14px; border-radius: 20px; font-weight: 600; font-size: 0.88rem;">
+            ⚠️ {count_atencao} Vencimento(s) nos Próximos 30 Dias
+        </span>
+        <span style="background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); color: #3b82f6; padding: 6px 14px; border-radius: 20px; font-weight: 600; font-size: 0.88rem;">
+            🔧 {count_maint} Manutenção(ões) Pendente(s)
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
     
     if alerts:
         for alert in alerts:
@@ -1144,8 +1195,8 @@ with tab_dashboard:
         
     st.divider()
     
-    # 📊 EFFICIENCY SUMMARY TABLE (stays all-time for cumulative accuracy)
-    st.markdown("### 📊 Eficiência & Custos por Veículo (Histórico Acumulado)")
+    # 📊 EFFICIENCY & CPK SUMMARY TABLE
+    st.markdown("### 📊 Eficiência & Custo por Quilômetro Rodado (CPK) por Veículo")
     metrics_rows = []
     for v in vehicles:
         v_id = v["id"]
@@ -1179,13 +1230,14 @@ with tab_dashboard:
             "Combustível": f"{liters:,.1f} L",
             "Média Consumo": f"{kml:.2f} km/L" if kml > 0 else "-",
             "Custo Total": f"R$ {total_v_cost:,.2f}",
-            "Custo por KM": f"R$ {cost_km:.2f}/km" if cost_km > 0 else "-",
+            "Custo por KM (CPK)": f"R$ {cost_km:.2f}/km" if cost_km > 0 else "-",
             "km_raw": km_run,
-            "liters_raw": liters
+            "liters_raw": liters,
+            "cpk_raw": cost_km
         })
         
     if metrics_rows:
-        st.dataframe(pd.DataFrame(metrics_rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(metrics_rows)[["Veículo", "KM Rodados", "Combustível", "Média Consumo", "Custo Total", "Custo por KM (CPK)"]], use_container_width=True, hide_index=True)
     else:
         st.info("Dados insuficientes para calcular métricas de eficiência.")
 
@@ -1221,8 +1273,8 @@ with tab_dashboard:
 
     st.divider()
 
-    # CHARTS SECTION
-    st.subheader("Gráficos Analíticos")
+    # CHARTS SECTION (PLOTLY INTERATIVOS)
+    st.subheader("Gráficos Analíticos Interativos (Plotly)")
     chart_col1, chart_col2 = st.columns(2)
     
     with chart_col1:
@@ -1255,6 +1307,16 @@ with tab_dashboard:
                     costs_data.append({"Mês": month_str, "Categoria": "Outras Despesas", "Valor": cost_val})
                 except ValueError:
                     pass
+        for fi in filtered_fines:
+            cost_val = as_number(fi.get("amount"))
+            fine_date_str = fi.get("fine_date")
+            if fine_date_str:
+                try:
+                    month_str = datetime.strptime(fine_date_str[:10], "%Y-%m-%d").strftime("%Y-%m")
+                    costs_data.append({"Mês": month_str, "Categoria": "Multas", "Valor": cost_val})
+                except ValueError:
+                    pass
+                    
         if costs_data:
             df_costs = pd.DataFrame(costs_data)
             df_grouped = df_costs.groupby(["Mês", "Categoria"])["Valor"].sum().reset_index()
@@ -1267,8 +1329,9 @@ with tab_dashboard:
                 text_auto=".2s",
                 labels={"Valor": "Custo (R$)"},
                 color_discrete_map={
-                    "Manutenção": "#10b981",
                     "Abastecimento": "#3b82f6",
+                    "Manutenção": "#10b981",
+                    "Multas": "#ef4444",
                     "Outras Despesas": "#8b5cf6"
                 }
             )
@@ -1276,32 +1339,37 @@ with tab_dashboard:
             apply_premium_chart_theme(fig)
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("Ainda não há dados suficientes para gerar o gráfico de custos.")
+            st.info("Ainda não há dados suficientes para gerar o gráfico de custos por categoria.")
 
     with chart_col2:
-        st.markdown("##### 🚚 Status Atual da Frota")
-        if vehicles:
-            df_vehicles = pd.DataFrame(vehicles)
-            status_counts = df_vehicles["status"].value_counts().reset_index()
-            status_counts.columns = ["Status", "Quantidade"]
-            fig_status = px.pie(
-                status_counts,
-                names="Status",
-                values="Quantidade",
-                hole=0.4,
-                color="Status",
+        st.markdown("##### 🍩 Composição Financeira da Frota no Período")
+        if total_cost > 0:
+            df_pie = pd.DataFrame([
+                {"Categoria": "Abastecimento", "Valor": total_fuel},
+                {"Categoria": "Manutenção", "Valor": total_maint},
+                {"Categoria": "Multas", "Valor": total_fines},
+                {"Categoria": "Outras Despesas", "Valor": total_expenses}
+            ])
+            df_pie = df_pie[df_pie["Valor"] > 0]
+            fig_pie = px.pie(
+                df_pie,
+                names="Categoria",
+                values="Valor",
+                hole=0.45,
+                color="Categoria",
                 color_discrete_map={
-                    "Disponível": "#10b981",
-                    "Manutenção": "#f59e0b",
-                    "Em Uso": "#3b82f6",
-                    "Inativo": "#ef4444"
+                    "Abastecimento": "#3b82f6",
+                    "Manutenção": "#10b981",
+                    "Multas": "#ef4444",
+                    "Outras Despesas": "#8b5cf6"
                 }
             )
-            fig_status.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=350)
-            apply_premium_chart_theme(fig_status)
-            st.plotly_chart(fig_status, use_container_width=True)
+            fig_pie.update_traces(textinfo="percent+label", hovertemplate="%{label}: R$ %{value:,.2f}")
+            fig_pie.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=350)
+            apply_premium_chart_theme(fig_pie)
+            st.plotly_chart(fig_pie, use_container_width=True)
         else:
-            st.info("Cadastre veículos para ver o gráfico de status.")
+            st.info("Nenhuma despesa no período para exibir o gráfico de composição.")
 
     st.divider()
     st.subheader("Evolução & Análise de Custos")
@@ -1356,7 +1424,7 @@ with tab_dashboard:
                 markers=True,
                 labels={"Custo Total (R$)": "Total (R$)"}
             )
-            fig_evo.update_traces(line=dict(color="#0052cc", width=3), marker=dict(size=8, color="#0052cc"))
+            fig_evo.update_traces(line=dict(color="#3b82f6", width=3), marker=dict(size=8, color="#2563eb"))
             fig_evo.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=350)
             apply_premium_chart_theme(fig_evo)
             st.plotly_chart(fig_evo, use_container_width=True)
@@ -1364,7 +1432,7 @@ with tab_dashboard:
             st.info("Ainda não há dados suficientes para traçar a evolução de despesas.")
 
     with col_chart4:
-        st.markdown("##### 🏆 Top 5 Veículos por Custo (Combustível + Manutenção + Despesas no Período)")
+        st.markdown("##### 🏆 Top Veículos por Custo Total no Período")
         v_costs = []
         for v in vehicles:
             v_id = v["id"]
@@ -1439,7 +1507,37 @@ with tab_vehicles:
         with col_v1:
             st.markdown("##### Veículos Cadastrados")
             if vehicles:
-                st.dataframe(safe_dataframe(vehicles, ["name", "plate", "year", "status", "ipva_expiry", "insurance_expiry"]), use_container_width=True, hide_index=True)
+                v_rows = []
+                for v in vehicles:
+                    v_id = v["id"]
+                    odo_curr = vehicle_odometer(v_id, fuel, maintenance, checkins)
+                    
+                    v_fuel = [f for f in fuel if f.get("vehicle_id") == v_id]
+                    v_maint = [m for m in maintenance if m.get("vehicle_id") == v_id]
+                    v_checkins = [c for c in checkins if c.get("vehicle_id") == v_id]
+                    v_exp = [e for e in expenses if e.get("vehicle_id") == v_id]
+                    
+                    odos = []
+                    for item in v_fuel + v_maint:
+                        odos.append(as_number(item.get("odometer")))
+                    for item in v_checkins:
+                        odos.extend([as_number(item.get("odometer_start")), as_number(item.get("odometer_end"))])
+                    
+                    km_run = max(odos) - min(odos) if len(odos) >= 2 else 0.0
+                    tot_cost = sum(as_number(f.get("cost")) for f in v_fuel) + sum(as_number(m.get("cost")) for m in v_maint) + sum(as_number(e.get("cost")) for e in v_exp)
+                    cpk_val = tot_cost / km_run if km_run > 0 else 0.0
+                    
+                    v_rows.append({
+                        "Modelo/Nome": v.get("name", ""),
+                        "Placa": v.get("plate", ""),
+                        "Ano": v.get("year", ""),
+                        "Status": v.get("status", ""),
+                        "Odômetro": f"{odo_curr:,.0f} km",
+                        "Custo/KM (CPK)": f"R$ {cpk_val:.2f}/km" if cpk_val > 0 else "-",
+                        "IPVA": v.get("ipva_expiry", ""),
+                        "Seguro": v.get("insurance_expiry", "")
+                    })
+                st.dataframe(pd.DataFrame(v_rows), use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum veículo cadastrado.")
         with col_v2:
