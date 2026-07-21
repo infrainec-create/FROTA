@@ -1892,11 +1892,37 @@ with tab_operations:
                 st.info("Nenhuma viagem finalizada encontrada no histórico.")
 
 with tab_maintenance:
-    st.subheader("Manutenções Preventivas e Corretivas")
+    st.subheader("🛠️ Manutenções Preventivas e Corretivas")
     
-    maint_col1, maint_col2 = st.columns([1, 2])
+    maint_tab1, maint_tab2, maint_tab3 = st.tabs([
+        "📋 Histórico de Manutenções", "➕ Registrar Manutenção", "✏️ Gestão de Manutenções"
+    ])
     
-    with maint_col1:
+    with maint_tab1:
+        st.markdown("##### 📋 Histórico Recente de Serviços")
+        if maintenance:
+            df_maint = safe_dataframe(maintenance, ["maint_date", "vehicle_id", "maint_type", "description", "cost", "odometer"])
+            vehicles_dict = {v["id"]: vehicle_label(v) for v in vehicles}
+            df_maint["Veículo"] = df_maint["vehicle_id"].map(vehicles_dict).fillna("Veículo Excluído")
+            
+            df_maint_display = df_maint.copy()
+            df_maint_display["cost"] = df_maint_display["cost"].map(lambda x: f"R$ {as_number(x):,.2f}")
+            df_maint_display["odometer"] = df_maint_display["odometer"].map(lambda x: f"{as_number(x):,.0f} km")
+            
+            st.dataframe(
+                df_maint_display[["maint_date", "Veículo", "maint_type", "description", "cost", "odometer"]].rename(columns={
+                    "maint_date": "Data",
+                    "maint_type": "Tipo",
+                    "description": "Serviço",
+                    "cost": "Custo",
+                    "odometer": "Odômetro"
+                }), 
+                use_container_width=True, hide_index=True
+            )
+        else:
+            st.info("Nenhuma manutenção registrada até o momento.")
+            
+    with maint_tab2:
         st.markdown("##### 🛠️ Registrar Nova Manutenção")
         if not vehicles:
             st.info("Cadastre veículos primeiro.")
@@ -1928,30 +1954,74 @@ with tab_maintenance:
                         st.cache_data.clear()
                         st.success("Manutenção registrada com sucesso!")
                         st.rerun()
-                        
-    with maint_col2:
-        st.markdown("##### 📋 Histórico Recente de Serviços")
-        if maintenance:
-            df_maint = safe_dataframe(maintenance, ["maint_date", "vehicle_id", "maint_type", "description", "cost", "odometer"])
-            vehicles_dict = {v["id"]: vehicle_label(v) for v in vehicles}
-            df_maint["Veículo"] = df_maint["vehicle_id"].map(vehicles_dict).fillna("Veículo Excluído")
-            
-            df_maint_display = df_maint.copy()
-            df_maint_display["cost"] = df_maint_display["cost"].map(lambda x: f"R$ {as_number(x):,.2f}")
-            df_maint_display["odometer"] = df_maint_display["odometer"].map(lambda x: f"{as_number(x):,.0f} km")
-            
-            st.dataframe(
-                df_maint_display[["maint_date", "Veículo", "maint_type", "description", "cost", "odometer"]].rename(columns={
-                    "maint_date": "Data",
-                    "maint_type": "Tipo",
-                    "description": "Serviço",
-                    "cost": "Custo",
-                    "odometer": "Odômetro"
-                }), 
-                use_container_width=True, hide_index=True
-            )
+
+    with maint_tab3:
+        if not maintenance:
+            st.info("Nenhuma manutenção registrada para editar ou excluir.")
         else:
-            st.info("Nenhuma manutenção registrada até o momento.")
+            vehicles_dict = {v["id"]: vehicle_label(v) for v in vehicles}
+            maint_map = {}
+            for m_item in maintenance:
+                v_lbl = vehicles_dict.get(m_item.get("vehicle_id"), "Desconhecido")
+                desc_short = m_item.get("description", "")[:25]
+                label = f"{m_item.get('maint_date')} - {v_lbl} - {m_item.get('maint_type')} ({desc_short}) - R$ {as_number(m_item.get('cost')):.2f}"
+                maint_map[label] = m_item
+                
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                st.markdown("##### ✏️ Editar Manutenção")
+                selected_m_edit = st.selectbox("Selecione a Manutenção para editar", [None] + list(maint_map), key="edit_m_select")
+                if selected_m_edit:
+                    m_data = maint_map[selected_m_edit]
+                    edit_v_obj = next((v for v in vehicles if v["id"] == m_data.get("vehicle_id")), None)
+                    v_all_lbls = [vehicle_label(v) for v in vehicles if v.get("status") != "Inativo" or v["id"] == m_data.get("vehicle_id")]
+                    
+                    edit_m_v = st.selectbox("Veículo", v_all_lbls, index=v_all_lbls.index(vehicle_label(edit_v_obj)) if edit_v_obj else 0, key="edit_m_v_sel")
+                    maint_types = ["Preventiva", "Corretiva", "Preditiva", "Outros"]
+                    edit_m_type = st.selectbox("Tipo de Manutenção", maint_types, index=maint_types.index(m_data.get("maint_type", "Preventiva")) if m_data.get("maint_type") in maint_types else 0, key="edit_m_type_sel")
+                    edit_m_desc = st.text_area("Serviço executado", value=m_data.get("description", ""), key="edit_m_desc_val")
+                    edit_m_cost = st.number_input("Custo (R$)", min_value=0.01, step=1.0, value=float(as_number(m_data.get("cost")) or 1.0), key="edit_m_cost_val")
+                    edit_m_odo = st.number_input("Odômetro (KM)", min_value=0.0, step=1.0, value=float(as_number(m_data.get("odometer"))), key="edit_m_odo_val")
+                    
+                    raw_date = m_data.get("maint_date", "")
+                    try:
+                        parsed_date = date.fromisoformat(str(raw_date)[:10])
+                    except ValueError:
+                        parsed_date = date.today()
+                    edit_m_date = st.date_input("Data da Manutenção", value=parsed_date, key="edit_m_date_val")
+                    
+                    if st.button("Salvar Alterações de Manutenção", key="save_maint_btn"):
+                        if not edit_m_desc.strip():
+                            st.error("Descreva o serviço executado.")
+                        else:
+                            by_label_all = {vehicle_label(v): v for v in vehicles}
+                            sel_v_obj = by_label_all[edit_m_v]
+                            repo.update("maintenance", m_data["id"], {
+                                "vehicle_id": sel_v_obj["id"],
+                                "maint_type": edit_m_type,
+                                "description": edit_m_desc.strip(),
+                                "cost": edit_m_cost,
+                                "maint_date": edit_m_date,
+                                "odometer": edit_m_odo
+                            })
+                            log_action("Edição de Manutenção", f"Manutenção ID {m_data['id']} atualizada.")
+                            st.cache_data.clear()
+                            st.success("Manutenção atualizada com sucesso!")
+                            st.rerun()
+
+            with col_m2:
+                st.markdown("##### 🗑️ Excluir Manutenção")
+                selected_m_del = st.selectbox("Selecione a Manutenção para excluir", [None] + list(maint_map), key="del_m_select")
+                if selected_m_del:
+                    m_del_data = maint_map[selected_m_del]
+                    st.error("⚠️ Atenção: Isso excluirá permanentemente o registro desta manutenção.")
+                    confirm_m = st.checkbox("Confirmo a exclusão definitiva desta manutenção.", key="confirm_m_del_check")
+                    if st.button("Excluir Manutenção", type="primary", disabled=not confirm_m, key="del_maint_btn"):
+                        repo.delete("maintenance", m_del_data["id"])
+                        log_action("Exclusão de Manutenção", f"Manutenção ID {m_del_data['id']} excluída.")
+                        st.cache_data.clear()
+                        st.success("Manutenção excluída com sucesso!")
+                        st.rerun()
 
 with tab_fines:
     st.subheader("🚨 Controle de Multas & Infrações de Trânsito")
