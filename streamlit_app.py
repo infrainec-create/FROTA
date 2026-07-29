@@ -528,6 +528,9 @@ nav_options = [
     "⚙️ Configurações"
 ]
 
+if "pending_nav_module" in st.session_state:
+    st.session_state["sidebar_nav_module"] = st.session_state.pop("pending_nav_module")
+
 selected_module = st.sidebar.radio(
     "Navegação Principal",
     options=nav_options,
@@ -956,25 +959,38 @@ except AttributeError:
     st.rerun()
 
 if selected_module == "📊 Painel Geral":
+    def set_pending_nav(target_module: str):
+        st.session_state["pending_nav_module"] = target_module
+
+    def apply_dash_preset():
+        preset = st.session_state.get("dash_preset")
+        today = datetime.today()
+        rev_map = {1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro"}
+        if preset == "⚡ Este Mês":
+            st.session_state["dash_year"] = today.year
+            st.session_state["dash_month"] = rev_map[today.month]
+        elif preset == "📅 Mês Anterior":
+            prev_dt = today.replace(day=1) - timedelta(days=1)
+            st.session_state["dash_year"] = prev_dt.year
+            st.session_state["dash_month"] = rev_map[prev_dt.month]
+        elif preset == "🗓️ Ano Atual":
+            st.session_state["dash_year"] = today.year
+            st.session_state["dash_month"] = "Todos"
+        elif preset == "🌐 Todo o Histórico":
+            st.session_state["dash_year"] = "Todos"
+            st.session_state["dash_month"] = "Todos"
+
     # ⚡ BARRA DE AÇÕES RÁPIDAS (ATALHOS DIRETO NO TOPO)
     st.markdown("##### ⚡ Ações Rápidas do Gestor")
     qa_col1, qa_col2, qa_col3, qa_col4 = st.columns(4)
     with qa_col1:
-        if st.button("⛽ Novo Abastecimento", key="qa_fuel", use_container_width=True):
-            st.session_state["sidebar_nav_module"] = "⚡ Operações Rápidas"
-            st.rerun()
+        st.button("⛽ Novo Abastecimento", key="qa_fuel", use_container_width=True, on_click=set_pending_nav, args=("⚡ Operações Rápidas",))
     with qa_col2:
-        if st.button("🔧 Nova Manutenção", key="qa_maint", use_container_width=True):
-            st.session_state["sidebar_nav_module"] = "🔧 Manutenções & Pneus"
-            st.rerun()
+        st.button("🔧 Nova Manutenção", key="qa_maint", use_container_width=True, on_click=set_pending_nav, args=("🔧 Manutenções & Pneus",))
     with qa_col3:
-        if st.button("📋 Check-in / Check-out", key="qa_checkin", use_container_width=True):
-            st.session_state["sidebar_nav_module"] = "⚡ Operações Rápidas"
-            st.rerun()
+        st.button("📋 Check-in / Check-out", key="qa_checkin", use_container_width=True, on_click=set_pending_nav, args=("⚡ Operações Rápidas",))
     with qa_col4:
-        if st.button("🚨 Registrar Multa", key="qa_fine", use_container_width=True):
-            st.session_state["sidebar_nav_module"] = "🚨 Multas & Infrações"
-            st.rerun()
+        st.button("🚨 Registrar Multa", key="qa_fine", use_container_width=True, on_click=set_pending_nav, args=("🚨 Multas & Infrações",))
 
     st.markdown("<div style='margin-bottom: 8px;'></div>", unsafe_allow_html=True)
 
@@ -985,27 +1001,13 @@ if selected_module == "📊 Painel Geral":
         st.markdown("### 📊 Painel Geral Executivo")
         st.caption("Visão consolidada do desempenho da frota, alertas operacionais e métricas financeiras.")
 
-    months_reverse_map = {1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro"}
-    
     with col_head_preset:
-        preset_choice = st.selectbox(
+        st.selectbox(
             "Filtro Rápido",
             ["Personalizado", "⚡ Este Mês", "📅 Mês Anterior", "🗓️ Ano Atual", "🌐 Todo o Histórico"],
-            key="dash_preset"
+            key="dash_preset",
+            on_change=apply_dash_preset
         )
-        if preset_choice == "⚡ Este Mês":
-            st.session_state["dash_year"] = datetime.today().year
-            st.session_state["dash_month"] = months_reverse_map[datetime.today().month]
-        elif preset_choice == "📅 Mês Anterior":
-            prev_dt = datetime.today().replace(day=1) - timedelta(days=1)
-            st.session_state["dash_year"] = prev_dt.year
-            st.session_state["dash_month"] = months_reverse_map[prev_dt.month]
-        elif preset_choice == "🗓️ Ano Atual":
-            st.session_state["dash_year"] = datetime.today().year
-            st.session_state["dash_month"] = "Todos"
-        elif preset_choice == "🌐 Todo o Histórico":
-            st.session_state["dash_year"] = "Todos"
-            st.session_state["dash_month"] = "Todos"
         
     with col_head_filter1:
         selected_year = st.selectbox("Ano", ["Todos"] + list(range(datetime.today().year - 2, datetime.today().year + 2)), key="dash_year")
