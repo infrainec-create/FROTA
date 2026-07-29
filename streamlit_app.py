@@ -956,12 +956,56 @@ except AttributeError:
     st.rerun()
 
 if selected_module == "📊 Painel Geral":
-    # 📆 CABEÇALHO & FILTROS TEMPORAIS ENXUTOS
-    col_head_title, col_head_filter1, col_head_filter2 = st.columns([2.5, 1, 1])
+    # ⚡ BARRA DE AÇÕES RÁPIDAS (ATALHOS DIRETO NO TOPO)
+    st.markdown("##### ⚡ Ações Rápidas do Gestor")
+    qa_col1, qa_col2, qa_col3, qa_col4 = st.columns(4)
+    with qa_col1:
+        if st.button("⛽ Novo Abastecimento", key="qa_fuel", use_container_width=True):
+            st.session_state["sidebar_nav_module"] = "⚡ Operações Rápidas"
+            st.rerun()
+    with qa_col2:
+        if st.button("🔧 Nova Manutenção", key="qa_maint", use_container_width=True):
+            st.session_state["sidebar_nav_module"] = "🔧 Manutenções & Pneus"
+            st.rerun()
+    with qa_col3:
+        if st.button("📋 Check-in / Check-out", key="qa_checkin", use_container_width=True):
+            st.session_state["sidebar_nav_module"] = "⚡ Operações Rápidas"
+            st.rerun()
+    with qa_col4:
+        if st.button("🚨 Registrar Multa", key="qa_fine", use_container_width=True):
+            st.session_state["sidebar_nav_module"] = "🚨 Multas & Infrações"
+            st.rerun()
+
+    st.markdown("<div style='margin-bottom: 8px;'></div>", unsafe_allow_html=True)
+
+    # 📆 CABEÇALHO & FILTROS TEMPORAIS COM PRESETS
+    col_head_title, col_head_preset, col_head_filter1, col_head_filter2 = st.columns([2, 1.8, 1, 1])
     
     with col_head_title:
         st.markdown("### 📊 Painel Geral Executivo")
         st.caption("Visão consolidada do desempenho da frota, alertas operacionais e métricas financeiras.")
+
+    months_reverse_map = {1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro"}
+    
+    with col_head_preset:
+        preset_choice = st.selectbox(
+            "Filtro Rápido",
+            ["Personalizado", "⚡ Este Mês", "📅 Mês Anterior", "🗓️ Ano Atual", "🌐 Todo o Histórico"],
+            key="dash_preset"
+        )
+        if preset_choice == "⚡ Este Mês":
+            st.session_state["dash_year"] = datetime.today().year
+            st.session_state["dash_month"] = months_reverse_map[datetime.today().month]
+        elif preset_choice == "📅 Mês Anterior":
+            prev_dt = datetime.today().replace(day=1) - timedelta(days=1)
+            st.session_state["dash_year"] = prev_dt.year
+            st.session_state["dash_month"] = months_reverse_map[prev_dt.month]
+        elif preset_choice == "🗓️ Ano Atual":
+            st.session_state["dash_year"] = datetime.today().year
+            st.session_state["dash_month"] = "Todos"
+        elif preset_choice == "🌐 Todo o Histórico":
+            st.session_state["dash_year"] = "Todos"
+            st.session_state["dash_month"] = "Todos"
         
     with col_head_filter1:
         selected_year = st.selectbox("Ano", ["Todos"] + list(range(datetime.today().year - 2, datetime.today().year + 2)), key="dash_year")
@@ -1039,6 +1083,68 @@ if selected_module == "📊 Painel Geral":
     total_fines = sum(as_number(fi.get("amount")) for fi in filtered_fines)
     total_expenses = sum(as_number(e.get("cost")) for e in filtered_expenses)
     total_cost = total_maint + total_fuel + total_fines + total_expenses
+
+    # 📈 CÁLCULO DE DELTA % VS MÊS ANTERIOR
+    if selected_month is not None:
+        if selected_month == 1:
+            p_year = selected_year - 1 if selected_year != "Todos" else "Todos"
+            p_month = 12
+        else:
+            p_year = selected_year
+            p_month = selected_month - 1
+    else:
+        p_year = selected_year - 1 if selected_year != "Todos" else "Todos"
+        p_month = None
+
+    prev_fuel_cost = 0.0
+    prev_maint_cost = 0.0
+    prev_fines_cost = 0.0
+    prev_exp_cost = 0.0
+    for f in fuel:
+        d_str = f.get("fuel_date") or f.get("created_at")
+        if d_str:
+            try:
+                dt = datetime.strptime(d_str[:10], "%Y-%m-%d")
+                if p_year != "Todos" and dt.year != int(p_year): continue
+                if p_month is not None and dt.month != p_month: continue
+                prev_fuel_cost += as_number(f.get("cost"))
+            except ValueError: pass
+    for m in maintenance:
+        d_str = m.get("maint_date") or m.get("created_at")
+        if d_str:
+            try:
+                dt = datetime.strptime(d_str[:10], "%Y-%m-%d")
+                if p_year != "Todos" and dt.year != int(p_year): continue
+                if p_month is not None and dt.month != p_month: continue
+                prev_maint_cost += as_number(m.get("cost"))
+            except ValueError: pass
+    for fi in fines:
+        d_str = fi.get("fine_date") or fi.get("created_at")
+        if d_str:
+            try:
+                dt = datetime.strptime(d_str[:10], "%Y-%m-%d")
+                if p_year != "Todos" and dt.year != int(p_year): continue
+                if p_month is not None and dt.month != p_month: continue
+                prev_fines_cost += as_number(fi.get("amount"))
+            except ValueError: pass
+    for e in expenses:
+        d_str = e.get("expense_date") or e.get("created_at")
+        if d_str:
+            try:
+                dt = datetime.strptime(d_str[:10], "%Y-%m-%d")
+                if p_year != "Todos" and dt.year != int(p_year): continue
+                if p_month is not None and dt.month != p_month: continue
+                prev_exp_cost += as_number(e.get("cost"))
+            except ValueError: pass
+
+    prev_total_cost = prev_fuel_cost + prev_maint_cost + prev_fines_cost + prev_exp_cost
+    cost_delta_subtext = f"Combustível: R$ {total_fuel:,.0f}"
+    if prev_total_cost > 0:
+        cost_diff_pct = ((total_cost - prev_total_cost) / prev_total_cost) * 100
+        if cost_diff_pct > 0:
+            cost_delta_subtext = f"🔴 +{cost_diff_pct:.1f}% vs. p.a."
+        else:
+            cost_delta_subtext = f"🟢 {cost_diff_pct:.1f}% vs. p.a."
     
     # Cálculo de CPK Médio da Frota
     fleet_total_km = 0.0
@@ -1164,6 +1270,39 @@ if selected_module == "📊 Painel Geral":
 
     all_alerts = alerts + consumption_alerts
 
+    # 🛡️ SCORE / INDICADOR DE SAÚDE DA FROTA (0 - 100%)
+    if vehicles:
+        doc_valid = 0
+        for v in vehicles:
+            ipva_ok = True
+            ins_ok = True
+            if v.get("ipva_expiry"):
+                try: ipva_ok = date.fromisoformat(v["ipva_expiry"]) > today
+                except ValueError: pass
+            if v.get("insurance_expiry"):
+                try: ins_ok = date.fromisoformat(v["insurance_expiry"]) > today
+                except ValueError: pass
+            if ipva_ok and ins_ok: doc_valid += 1
+        doc_score = (doc_valid / len(vehicles)) * 30.0
+
+        driver_valid = sum(1 for d in drivers if not d.get("license_expiry") or (lambda exp: exp > today)(date.fromisoformat(d["license_expiry"]))) if drivers else len(drivers)
+        driver_score = ((driver_valid / len(drivers)) if drivers else 1.0) * 20.0
+
+        maint_ok = max(0, len(vehicles) - count_maint)
+        maint_score = (maint_ok / len(vehicles)) * 25.0
+
+        tires_ok = sum(1 for t in tires if as_number(t.get("current_tread_mm", 8.0)) > 3.0) if tires else len(tires)
+        tires_score = ((tires_ok / len(tires)) if tires else 1.0) * 15.0
+
+        anomalies_cnt = len(consumption_alerts)
+        eff_score = (max(0, len(vehicles) - anomalies_cnt) / len(vehicles)) * 10.0
+
+        health_score = int(doc_score + driver_score + maint_score + tires_score + eff_score)
+    else:
+        health_score = 100
+
+    health_color = "#10b981" if health_score >= 85 else ("#f59e0b" if health_score >= 65 else "#ef4444")
+
     # 1. CARDS DE KPIS RESUMIDOS (5 COLUNAS)
     col_a, col_b, col_c, col_d, col_e = st.columns(5)
     with col_a:
@@ -1179,7 +1318,7 @@ if selected_module == "📊 Painel Geral":
         <div class="kpi-card">
             <div class="kpi-title">💰 Custo Total</div>
             <div class="kpi-value" style="color: #3b82f6;">R$ {total_cost:,.2f}</div>
-            <div class="kpi-subtext">Combustível: R$ {total_fuel:,.0f}</div>
+            <div class="kpi-subtext">{cost_delta_subtext}</div>
         </div>
         """, unsafe_allow_html=True)
     with col_c:
@@ -1193,9 +1332,9 @@ if selected_module == "📊 Painel Geral":
     with col_d:
         st.markdown(f"""
         <div class="kpi-card">
-            <div class="kpi-title">⛽ Rendimento Médio</div>
-            <div class="kpi-value" style="color: #10b981;">{f"{fleet_avg_kml:.2f} km/L" if fleet_avg_kml > 0 else "-"}</div>
-            <div class="kpi-subtext">Média geral da frota</div>
+            <div class="kpi-title">🛡️ Saúde da Frota</div>
+            <div class="kpi-value" style="color: {health_color};">{health_score}%</div>
+            <div class="kpi-subtext">Índice Operacional</div>
         </div>
         """, unsafe_allow_html=True)
     with col_e:
@@ -1205,6 +1344,65 @@ if selected_module == "📊 Painel Geral":
             <div class="kpi-title">🔔 Alertas da Frota</div>
             <div class="kpi-value" style="color: {badge_color};">{len(all_alerts)}</div>
             <div class="kpi-subtext">{count_vencidos} Críticos · {count_atencao} Atenção</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # 🚘 MINI PAINEL DE STATUS EM TEMPO REAL DOS VEÍCULOS
+    if vehicles:
+        st.markdown("##### 🚘 Status em Tempo Real da Frota")
+        open_checkins = [item for item in checkins if not item.get("checkout_at")]
+        v_in_transit = {item.get("vehicle_id"): item.get("driver_id") for item in open_checkins}
+        
+        num_cols = min(len(vehicles), 6)
+        v_cols = st.columns(num_cols)
+        
+        for idx, v in enumerate(vehicles[:12]):
+            col_idx = idx % num_cols
+            v_id = v["id"]
+            v_label_short = f"{v.get('brand', '')} {v.get('model', '')}".strip() or v.get("name", "Veículo")
+            v_plate = v.get("plate", "")
+            
+            if v.get("status") == "Manutenção":
+                s_icon = "🟧"
+                s_text = "Em Oficina"
+                s_border = "rgba(245,158,11,0.4)"
+            elif v_id in v_in_transit:
+                driver_id = v_in_transit[v_id]
+                driver_obj = next((d for d in drivers if d["id"] == driver_id), None)
+                driver_name = driver_obj.get("name", "").split()[0] if driver_obj else "Motorista"
+                s_icon = "🟦"
+                s_text = f"Rota: {driver_name}"
+                s_border = "rgba(59,130,246,0.4)"
+            else:
+                s_icon = "🟩"
+                s_text = "No Pátio"
+                s_border = "rgba(16,185,129,0.4)"
+                
+            with v_cols[col_idx]:
+                st.markdown(f"""
+                <div style="background: rgba(128,128,128,0.04); border: 1px solid {s_border}; border-radius: 10px; padding: 6px 8px; margin-bottom: 8px; text-align: center;">
+                    <div style="font-weight: 700; font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{s_icon} {v_label_short}</div>
+                    <div style="font-size: 0.72rem; opacity: 0.65;">{v_plate}</div>
+                    <div style="font-size: 0.72rem; font-weight: 600; margin-top: 2px; color: var(--text-color); opacity: 0.85;">{s_text}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # 🧠 INSIGHTS AUTOMÁTICOS DA FROTA
+    smart_insights = []
+    if fleet_avg_kml > 0:
+        smart_insights.append(f"⛽ **Rendimento**: Média geral da frota em **{fleet_avg_kml:.2f} km/L**. {len(consumption_alerts)} veículo(s) abaixo do padrão esperado.")
+    if count_vencidos > 0:
+        smart_insights.append(f"🚨 **Atenção**: **{count_vencidos} item(ns) crítico(s)/vencido(s)** demandam regularização imediata.")
+    elif count_atencao > 0:
+        smart_insights.append(f"📅 **Vencimentos**: **{count_atencao} documento(s)/habilitação(ões)** vencerão nos próximos 30 dias.")
+    if count_tires_alert > 0:
+        smart_insights.append(f"🛞 **Manutenção de Pneus**: **{count_tires_alert} pneu(s)** com sulco reduzido (recomenda-se rodízio/troca).")
+
+    if smart_insights:
+        st.markdown(f"""
+        <div style="background: rgba(59, 130, 246, 0.05); border-left: 4px solid #3b82f6; border-radius: 10px; padding: 10px 14px; margin: 8px 0 14px 0;">
+            <div style="font-weight: 700; font-size: 0.88rem; color: #3b82f6; margin-bottom: 4px;">💡 Insights Inteligentes da Frota</div>
+            {''.join([f'<div style="font-size: 0.84rem; margin-bottom: 3px; color: var(--text-color); opacity: 0.9;">• {ins}</div>' for ins in smart_insights])}
         </div>
         """, unsafe_allow_html=True)
 
