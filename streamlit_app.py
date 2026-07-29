@@ -63,6 +63,15 @@ def hash_password(password: str) -> str:
     return hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
 
 
+# 🚀 Performance Caching for User Authentication (evita chamadas lentas não-cacheadas a cada render da página de login)
+@st.cache_data(ttl=300, show_spinner=False)
+def get_users_cached() -> list[dict[str, Any]]:
+    try:
+        return get_repository().list("users")
+    except Exception:
+        return []
+
+
 # 🚪 Advanced Authentication Gate
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -73,15 +82,6 @@ if "login_attempts" not in st.session_state:
 if "lockout_time" not in st.session_state:
     st.session_state["lockout_time"] = 0.0
 
-# Brute-Force lockout check (60 seconds block after 5 failed attempts)
-if st.session_state["login_attempts"] >= 5:
-    elapsed_lock = time.time() - st.session_state["lockout_time"]
-    if elapsed_lock < 60:
-        st.error(f"⚠️ Conta temporariamente bloqueada devido a muitas tentativas incorretas. Tente novamente em {int(60 - elapsed_lock)} segundos.")
-        st.stop()
-    else:
-        st.session_state["login_attempts"] = 0
-
 # Session Timeout check (30 minutes = 1800 seconds)
 if st.session_state["authenticated"]:
     if "last_activity" in st.session_state:
@@ -89,8 +89,7 @@ if st.session_state["authenticated"]:
         if elapsed_act > 1800:
             st.session_state["authenticated"] = False
             st.session_state["username"] = ""
-            st.warning("⚠️ Sua sessão expirou por inatividade. Faça login novamente.")
-            st.rerun()
+            st.session_state["login_notice"] = "⚠️ Sua sessão expirou por inatividade. Faça login novamente."
     st.session_state["last_activity"] = time.time()
 
 # Core CSS variables override for Theme configurations
@@ -154,18 +153,18 @@ if not st.session_state["authenticated"]:
     /* Centered layout for login page */
     .block-container {{
         max-width: 480px !important;
-        padding: 4rem 1.5rem !important;
+        padding: 3rem 1.5rem !important;
         margin: auto !important;
     }}
     
     /* Glassmorphic Login Header */
     .login-box {{
         text-align: center;
-        margin-bottom: 2rem;
+        margin-bottom: 1.5rem;
     }}
     .logo-icon {{
         font-size: 3.5rem;
-        margin-bottom: 0.75rem;
+        margin-bottom: 0.5rem;
         display: inline-block;
         filter: drop-shadow(0 10px 15px rgba(37, 99, 235, 0.2));
         animation: float 6s ease-in-out infinite;
@@ -192,7 +191,7 @@ if not st.session_state["authenticated"]:
         }}
     }}
     .login-subtitle {{
-        font-size: 0.95rem;
+        font-size: 0.92rem;
         font-weight: 500;
         color: #4b5563;
     }}
@@ -207,7 +206,7 @@ if not st.session_state["authenticated"]:
         background-color: var(--secondary-background-color) !important;
         border: 1px solid rgba(128, 128, 128, 0.15) !important;
         border-radius: 24px !important;
-        padding: 2.5rem 2rem !important;
+        padding: 2.2rem 1.8rem !important;
         box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.02) !important;
         transition: all 0.3s ease !important;
     }}
@@ -232,7 +231,7 @@ if not st.session_state["authenticated"]:
         background: rgba(0, 0, 0, 0.03) !important;
         padding: 5px !important;
         border-radius: 14px !important;
-        margin-bottom: 2rem !important;
+        margin-bottom: 1.5rem !important;
         border: 1px solid rgba(0, 0, 0, 0.02) !important;
     }}
     @media (prefers-color-scheme: dark) {{
@@ -353,10 +352,20 @@ if not st.session_state["authenticated"]:
     </div>
     """, unsafe_allow_html=True)
 
-    try:
-        users_list = repo.list("users")
-    except Exception:
-        users_list = []
+    # Brute-Force lockout check (60 seconds block after 5 failed attempts)
+    if st.session_state["login_attempts"] >= 5:
+        elapsed_lock = time.time() - st.session_state["lockout_time"]
+        if elapsed_lock < 60:
+            st.error(f"⚠️ Conta temporariamente bloqueada devido a muitas tentativas incorretas. Tente novamente em {int(60 - elapsed_lock)} segundos.")
+            st.stop()
+        else:
+            st.session_state["login_attempts"] = 0
+
+    if "login_notice" in st.session_state and st.session_state["login_notice"]:
+        st.warning(st.session_state.pop("login_notice"))
+
+    # Utiliza lista cacheada rápida para autenticação instantânea sem chamadas à API por frame
+    users_list = get_users_cached()
 
     # Se não houver nenhum usuário, força a criação do primeiro administrador
     if not users_list:
@@ -398,18 +407,18 @@ if not st.session_state["authenticated"]:
                     st.rerun()
         st.stop()
 
-    # Center card without columns
     auth_mode = st.tabs(["🔑 Entrar", "➕ Nova Conta", "🩹 Recuperar Acesso"])
     
     with auth_mode[0]:
         with st.form("login_form"):
-            user = st.text_input("Usuário")
-            passwd = st.text_input("Senha", type="password")
+            user = st.text_input("Usuário", key="login_user_input")
+            passwd = st.text_input("Senha", type="password", key="login_pass_input")
             if st.form_submit_button("Entrar", type="primary", use_container_width=True):
-                matched = next((u for u in users_list if u["username"] == user.strip()), None)
-                if matched and matched["password"] == hash_password(passwd):
+                user_clean = user.strip().lower()
+                matched = next((u for u in users_list if u.get("username", "").strip().lower() == user_clean), None)
+                if matched and matched.get("password") == hash_password(passwd):
                     st.session_state["authenticated"] = True
-                    st.session_state["username"] = matched["username"]
+                    st.session_state["username"] = matched.get("username")
                     st.session_state["login_attempts"] = 0
                     st.rerun()
                 else:
@@ -443,17 +452,18 @@ if not st.session_state["authenticated"]:
             
             if st.form_submit_button("Criar Conta", type="primary", use_container_width=True):
                 invite_code = secret("ACCESS_PASSWORD", "admin123")
+                reg_user_clean = reg_user.strip()
                 if reg_code != invite_code:
                     st.error("Código de convite inválido.")
-                elif not reg_name.strip() or not reg_user.strip() or not reg_pass or not reg_answer.strip():
+                elif not reg_name.strip() or not reg_user_clean or not reg_pass or not reg_answer.strip():
                     st.error("Preencha todos os campos obrigatórios.")
                 elif reg_pass != reg_pass_confirm:
                     st.error("As senhas informadas não coincidem.")
-                elif any(u["username"] == reg_user.strip() for u in users_list):
+                elif any(u.get("username", "").strip().lower() == reg_user_clean.lower() for u in users_list):
                     st.error("Este nome de usuário já está em uso.")
                 else:
                     repo.add("users", {
-                        "username": reg_user.strip(),
+                        "username": reg_user_clean,
                         "password": hash_password(reg_pass),
                         "name": reg_name.strip(),
                         "security_question": reg_question,
@@ -463,30 +473,36 @@ if not st.session_state["authenticated"]:
                     st.success("Conta criada com sucesso! Faça login na aba 'Entrar'.")
                     
     with auth_mode[2]:
-        st.caption("Redefina sua senha respondendo à sua pergunta de segurança.")
-        rec_user = st.text_input("Seu Nome de Usuário", key="rec_u")
-        
-        matched_rec = None
-        if rec_user:
-            matched_rec = next((u for u in users_list if u["username"] == rec_user.strip()), None)
-            if not matched_rec:
-                st.error("Usuário não cadastrado.")
-        
-        if matched_rec:
-            st.info(f"Pergunta de Segurança: **{matched_rec.get('security_question')}**")
-            with st.form("recovery_form"):
+        st.caption("Redefina sua senha caso tenha esquecido suas credenciais.")
+        with st.form("recovery_search_form"):
+            rec_user_input = st.text_input("Seu Nome de Usuário", key="rec_u_form")
+            rec_submitted = st.form_submit_button("Localizar Conta", use_container_width=True)
+            
+        if rec_user_input and rec_submitted:
+            matched_rec = next((u for u in users_list if u.get("username", "").strip().lower() == rec_user_input.strip().lower()), None)
+            if matched_rec:
+                st.session_state["matched_rec_user"] = matched_rec
+            else:
+                st.error("Usuário não encontrado.")
+                st.session_state.pop("matched_rec_user", None)
+                
+        if "matched_rec_user" in st.session_state and st.session_state["matched_rec_user"]:
+            m_user = st.session_state["matched_rec_user"]
+            st.info(f"Pergunta de Segurança: **{m_user.get('security_question')}**")
+            with st.form("recovery_reset_form"):
                 rec_answer = st.text_input("Sua Resposta", type="password")
                 new_pass_val = st.text_input("Nova Senha", type="password")
                 new_pass_confirm_val = st.text_input("Confirme a Nova Senha", type="password")
                 if st.form_submit_button("Redefinir Senha", type="primary", use_container_width=True):
-                    if rec_answer.strip().lower() != matched_rec.get("security_answer", "").strip().lower():
+                    if rec_answer.strip().lower() != m_user.get("security_answer", "").strip().lower():
                         st.error("Resposta de segurança incorreta.")
                     elif new_pass_val != new_pass_confirm_val:
                         st.error("As senhas informadas não coincidem.")
                     else:
-                        repo.update("users", matched_rec["id"], {"password": hash_password(new_pass_val)})
+                        repo.update("users", m_user["id"], {"password": hash_password(new_pass_val)})
                         st.cache_data.clear()
-                        st.success("Senha redefinida com sucesso! Vá para a aba 'Entrar' para logar.")
+                        st.session_state.pop("matched_rec_user", None)
+                        st.success("Senha redefinida com sucesso! Vá para a aba 'Entrar' para efetuar login.")
     st.stop()
 
 
