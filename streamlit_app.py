@@ -574,55 +574,73 @@ html, body, [class*="css"] {{
     background: rgba(128, 128, 128, 0.05);
     border: 1px solid rgba(128, 128, 128, 0.15);
     border-radius: 16px;
-    padding: 1.5rem;
+    padding: 1.1rem 0.8rem;
     text-align: center;
     transition: all 0.3s ease;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    margin-bottom: 1rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    margin-bottom: 0.8rem;
 }}
 .kpi-card:hover {{
     transform: translateY(-2px);
-    border-color: rgba(128, 128, 128, 0.25);
+    border-color: rgba(59, 130, 246, 0.35);
     background: rgba(128, 128, 128, 0.08);
+    box-shadow: 0 8px 15px -3px rgba(0, 0, 0, 0.08);
 }}
 .kpi-title {{
-    font-size: 0.85rem;
-    color: #888888;
+    font-size: 0.78rem;
+    color: var(--text-color);
+    opacity: 0.75;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 0.5rem;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+    margin-bottom: 0.3rem;
 }}
 .kpi-value {{
-    font-size: 2.25rem;
-    font-weight: 700;
+    font-size: 1.8rem;
+    font-weight: 800;
+    line-height: 1.2;
+}}
+.kpi-subtext {{
+    font-size: 0.76rem;
+    color: var(--text-color);
+    opacity: 0.65;
+    margin-top: 0.3rem;
+    font-weight: 500;
+}}
+.alert-badge {{
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 600;
 }}
 /* Alert cards */
 .alert-card-warning {{
     background-color: rgba(245, 158, 11, 0.1);
     border-left: 4px solid #f59e0b;
-    padding: 1rem;
+    padding: 0.75rem 1rem;
     border-radius: 8px;
     color: #eab308;
-    font-size: 0.9rem;
-    margin-bottom: 0.8rem;
+    font-size: 0.88rem;
+    margin-bottom: 0.5rem;
 }}
 .alert-card-success {{
     background-color: rgba(16, 185, 129, 0.1);
     border-left: 4px solid #10b981;
-    padding: 1rem;
+    padding: 0.75rem 1rem;
     border-radius: 8px;
     color: #10b981;
-    font-size: 0.9rem;
-    margin-bottom: 0.8rem;
+    font-size: 0.88rem;
+    margin-bottom: 0.5rem;
 }}
 .alert-card-danger {{
     background-color: rgba(239, 68, 68, 0.1);
     border-left: 4px solid #ef4444;
-    padding: 1rem;
+    padding: 0.75rem 1rem;
     border-radius: 8px;
     color: #ef4444;
-    font-size: 0.9rem;
-    margin-bottom: 0.8rem;
+    font-size: 0.88rem;
+    margin-bottom: 0.5rem;
 }}
 /* Alinha os botões principais para padrão premium */
 .stButton>button {{
@@ -938,21 +956,25 @@ except AttributeError:
     st.rerun()
 
 if selected_module == "📊 Painel Geral":
-    st.subheader("Indicadores de Desempenho (KPIs)")
+    # 📆 CABEÇALHO & FILTROS TEMPORAIS ENXUTOS
+    col_head_title, col_head_filter1, col_head_filter2 = st.columns([2.5, 1, 1])
     
-    # 📆 FILTRO TEMPORAL NO DASHBOARD
-    dash_col_f1, dash_col_f2 = st.columns(2)
-    with dash_col_f1:
-        selected_year = st.selectbox("Filtrar Ano", ["Todos"] + list(range(datetime.today().year - 2, datetime.today().year + 2)), key="dash_year")
-    with dash_col_f2:
+    with col_head_title:
+        st.markdown("### 📊 Painel Geral Executivo")
+        st.caption("Visão consolidada do desempenho da frota, alertas operacionais e métricas financeiras.")
+        
+    with col_head_filter1:
+        selected_year = st.selectbox("Ano", ["Todos"] + list(range(datetime.today().year - 2, datetime.today().year + 2)), key="dash_year")
+    
+    with col_head_filter2:
         months_map = {
             "Todos": None, "Janeiro": 1, "Fevereiro": 2, "Março": 3, "Abril": 4, "Maio": 5, "Junho": 6,
             "Julho": 7, "Agosto": 8, "Setembro": 9, "Outubro": 10, "Novembro": 11, "Dezembro": 12
         }
-        selected_month_name = st.selectbox("Filtrar Mês", list(months_map.keys()), key="dash_month")
+        selected_month_name = st.selectbox("Mês", list(months_map.keys()), key="dash_month")
         selected_month = months_map[selected_month_name]
         
-    # Filtra despesas com base no ano/mês selecionado
+    # Processa filtragem dos registros com base no período selecionado
     filtered_maint = []
     for m in maintenance:
         d_str = m.get("maint_date") or m.get("created_at")
@@ -1018,7 +1040,7 @@ if selected_module == "📊 Painel Geral":
     total_expenses = sum(as_number(e.get("cost")) for e in filtered_expenses)
     total_cost = total_maint + total_fuel + total_fines + total_expenses
     
-    # Cálculo de CPK Médio da Frota no período
+    # Cálculo de CPK Médio da Frota
     fleet_total_km = 0.0
     for v in vehicles:
         v_id = v["id"]
@@ -1034,210 +1056,8 @@ if selected_module == "📊 Painel Geral":
             fleet_total_km += (max(odos) - min(odos))
             
     fleet_avg_cpk = total_cost / fleet_total_km if fleet_total_km > 0 else 0.0
-    
-    col_a, col_b, col_c, col_d, col_e = st.columns(5)
-    with col_a:
-        st.markdown(f"""
-        <div class="kpi-card">
-            <div class="kpi-title">Frota Total</div>
-            <div class="kpi-value">{len(vehicles)}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col_b:
-        st.markdown(f"""
-        <div class="kpi-card">
-            <div class="kpi-title">Disponíveis</div>
-            <div class="kpi-value" style="color: #10b981;">{active}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col_c:
-        st.markdown(f"""
-        <div class="kpi-card">
-            <div class="kpi-title">Em Manutenção</div>
-            <div class="kpi-value" style="color: #f59e0b;">{in_maintenance}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col_d:
-        st.markdown(f"""
-        <div class="kpi-card">
-            <div class="kpi-title">Custo no Período</div>
-            <div class="kpi-value" style="color: #3b82f6;">R$ {total_cost:,.2f}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col_e:
-        st.markdown(f"""
-        <div class="kpi-card">
-            <div class="kpi-title">Custo Médio CPK</div>
-            <div class="kpi-value" style="color: #8b5cf6;">{"R$ " + f"{fleet_avg_cpk:.2f}/km" if fleet_avg_cpk > 0 else "-"}</div>
-        </div>
-        """, unsafe_allow_html=True)
 
-    st.markdown("### 🔔 Central de Alertas de Vencimentos (IPVA, Seguro, CNH e Manutenção)")
-    alerts = []
-    today = date.today()
-    in_30_days = today + timedelta(days=30)
-    
-    count_vencidos = 0
-    count_atencao = 0
-    count_maint = 0
-    
-    # Vehicle Expiration & Maintenance Alerts using the custom threshold setting
-    for vehicle in vehicles:
-        current = vehicle_odometer(vehicle["id"], fuel, maintenance, checkins)
-        history = [as_number(m.get("odometer")) for m in maintenance if m.get("vehicle_id") == vehicle["id"]]
-        if current >= maint_limit_km and (not history or current - max(history) >= maint_limit_km):
-            alerts.append(f"🔧 **Manutenção Preventiva**: {vehicle_label(vehicle)} necessita de revisão (limite: {maint_limit_km:,} km, odômetro atual: **{current:,.0f} km**).")
-            count_maint += 1
-        
-        # IPVA Alert
-        ipva_str = vehicle.get("ipva_expiry")
-        if ipva_str:
-            try:
-                ipva_dt = date.fromisoformat(ipva_str)
-                if ipva_dt <= today:
-                    alerts.append(f"🔴 **IPVA Vencido**: O IPVA do veículo **{vehicle_label(vehicle)}** venceu em {ipva_dt.strftime('%d/%m/%Y')}!")
-                    count_vencidos += 1
-                elif ipva_dt <= in_30_days:
-                    alerts.append(f"⚠️ **IPVA Próximo do Vencimento**: O IPVA do veículo **{vehicle_label(vehicle)}** vence em {ipva_dt.strftime('%d/%m/%Y')}.")
-                    count_atencao += 1
-            except ValueError:
-                pass
-                
-        # Seguro Alert
-        ins_str = vehicle.get("insurance_expiry")
-        if ins_str:
-            try:
-                ins_dt = date.fromisoformat(ins_str)
-                if ins_dt <= today:
-                    alerts.append(f"🔴 **Seguro Vencido**: O seguro do veículo **{vehicle_label(vehicle)}** venceu em {ins_dt.strftime('%d/%m/%Y')}!")
-                    count_vencidos += 1
-                elif ins_dt <= in_30_days:
-                    alerts.append(f"⚠️ **Seguro Próximo do Vencimento**: O seguro do veículo **{vehicle_label(vehicle)}** vence em {ins_dt.strftime('%d/%m/%Y')}.")
-                    count_atencao += 1
-            except ValueError:
-                pass
-
-    # Driver CNH Alerts
-    for driver in drivers:
-        expiry_str = driver.get("license_expiry")
-        if expiry_str:
-            try:
-                exp_dt = date.fromisoformat(expiry_str)
-                if exp_dt <= today:
-                    alerts.append(f"🔴 **CNH Vencida**: A CNH de **{driver['name']}** venceu em {exp_dt.strftime('%d/%m/%Y')}!")
-                    count_vencidos += 1
-                elif exp_dt <= in_30_days:
-                    alerts.append(f"⚠️ **CNH Próxima do Vencimento**: A CNH de **{driver['name']}** vence em {exp_dt.strftime('%d/%m/%Y')}.")
-                    count_atencao += 1
-            except ValueError:
-                pass
-    
-    # Tire Tread Alerts
-    count_tires_alert = 0
-    pos_names_short = {"DE": "Dianteiro Esq.", "DD": "Dianteiro Dir.", "TE": "Traseiro Esq.", "TD": "Traseiro Dir.", "EST": "Estepe"}
-    for t_item in tires:
-        tread = as_number(t_item.get("current_tread_mm", 8.0))
-        v_obj = next((v for v in vehicles if v["id"] == t_item.get("vehicle_id")), None)
-        v_lbl = vehicle_label(v_obj) if v_obj else "Veículo"
-        p_name = pos_names_short.get(t_item.get("position"), t_item.get("position"))
-        
-        if tread < 1.6:
-            alerts.append(f"🔴 **Pneu Crítico (< 1.6mm)**: Pneu **{p_name}** ({t_item.get('brand', '')}) do **{v_lbl}** está com sulco em **{tread:.1f} mm** (Troca Imediata!).")
-            count_vencidos += 1
-            count_tires_alert += 1
-        elif tread <= 3.0:
-            alerts.append(f"⚠️ **Pneu com Sulco Baixo**: Pneu **{p_name}** ({t_item.get('brand', '')}) do **{v_lbl}** está com sulco em **{tread:.1f} mm** (Programar Rodízio / Substituição).")
-            count_atencao += 1
-            count_tires_alert += 1
-
-    st.markdown(f"""
-    <div style="display: flex; gap: 12px; margin-bottom: 15px; flex-wrap: wrap;">
-        <span style="background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #ef4444; padding: 6px 14px; border-radius: 20px; font-weight: 600; font-size: 0.88rem;">
-            🔴 {count_vencidos} Alerta(s) Crítico(s)
-        </span>
-        <span style="background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: #f59e0b; padding: 6px 14px; border-radius: 20px; font-weight: 600; font-size: 0.88rem;">
-            ⚠️ {count_atencao} Atenção (30 dias / Pneus)
-        </span>
-        <span style="background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); color: #3b82f6; padding: 6px 14px; border-radius: 20px; font-weight: 600; font-size: 0.88rem;">
-            🔧 {count_maint} Manutenção(ões) Pendente(s)
-        </span>
-        <span style="background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.3); color: #8b5cf6; padding: 6px 14px; border-radius: 20px; font-weight: 600; font-size: 0.88rem;">
-            🛞 {count_tires_alert} Alerta(s) de Pneus
-        </span>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    if alerts:
-        for alert in alerts:
-            card_class = "alert-card-danger" if "🔴" in alert else "alert-card-warning"
-            st.markdown(f'<div class="{card_class}">{alert}</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="alert-card-success">✔️ Todos os veículos e habilitações estão com a documentação e manutenção preventivas em dia!</div>', unsafe_allow_html=True)
-
-    st.divider()
-
-    # 📆 CRONOGRAMA MENSAL DE VENCIMENTOS (IPVA, Seguro e CNH no período selecionado)
-    st.markdown(f"### 📅 Cronograma de Vencimentos ({selected_month_name} / {selected_year})")
-    vencimentos_rows = []
-    for vehicle in vehicles:
-        ipva_str = vehicle.get("ipva_expiry")
-        if ipva_str:
-            try:
-                dt = datetime.strptime(ipva_str[:10], "%Y-%m-%d")
-                match_y = (selected_year == "Todos" or dt.year == int(selected_year))
-                match_m = (selected_month is None or dt.month == selected_month)
-                if match_y and match_m:
-                    vencimentos_rows.append({
-                        "Recurso": f"🚗 Veículo: {vehicle_label(vehicle)}",
-                        "Tipo de Despesa/Conta": "IPVA",
-                        "Data Limite": dt.strftime("%d/%m/%Y"),
-                        "Status": "Vencido" if dt.date() < today else ("Atenção" if dt.date() <= in_30_days else "Em dia")
-                    })
-            except ValueError:
-                pass
-                
-        ins_str = vehicle.get("insurance_expiry")
-        if ins_str:
-            try:
-                dt = datetime.strptime(ins_str[:10], "%Y-%m-%d")
-                match_y = (selected_year == "Todos" or dt.year == int(selected_year))
-                match_m = (selected_month is None or dt.month == selected_month)
-                if match_y and match_m:
-                    vencimentos_rows.append({
-                        "Recurso": f"🚗 Veículo: {vehicle_label(vehicle)}",
-                        "Tipo de Despesa/Conta": "Seguro",
-                        "Data Limite": dt.strftime("%d/%m/%Y"),
-                        "Status": "Vencido" if dt.date() < today else ("Atenção" if dt.date() <= in_30_days else "Em dia")
-                    })
-            except ValueError:
-                pass
-
-    for driver in drivers:
-        expiry_str = driver.get("license_expiry")
-        if expiry_str:
-            try:
-                dt = datetime.strptime(expiry_str[:10], "%Y-%m-%d")
-                match_y = (selected_year == "Todos" or dt.year == int(selected_year))
-                match_m = (selected_month is None or dt.month == selected_month)
-                if match_y and match_m:
-                    vencimentos_rows.append({
-                        "Recurso": f"👤 Motorista: {driver.get('name')}",
-                        "Tipo de Despesa/Conta": "Vencimento CNH",
-                        "Data Limite": dt.strftime("%d/%m/%Y"),
-                        "Status": "Vencido" if dt.date() < today else ("Atenção" if dt.date() <= in_30_days else "Em dia")
-                    })
-            except ValueError:
-                pass
-
-    if vencimentos_rows:
-        st.dataframe(pd.DataFrame(vencimentos_rows), use_container_width=True, hide_index=True)
-    else:
-        st.info("Nenhum vencimento de IPVA, Seguro ou CNH agendado para o período selecionado.")
-
-    st.divider()
-
-    # 🚨 DETECTOR DE CONSUMO ANÔMALO
-    st.markdown("### ⛽ Eficiência de Combustível & Detector de Desvio")
+    # Eficiência de Combustível & Rendimento Médio
     fleet_kmls = []
     vehicle_kmls = {}
     for v in vehicles:
@@ -1256,7 +1076,82 @@ if selected_module == "📊 Painel Geral":
             vehicle_kmls[v["id"]] = kml
             
     fleet_avg_kml = sum(fleet_kmls) / len(fleet_kmls) if fleet_kmls else 0.0
+
+    # 🚨 APURAÇÃO DE ALERTAS DA FROTA
+    alerts = []
+    today = date.today()
+    in_30_days = today + timedelta(days=30)
     
+    count_vencidos = 0
+    count_atencao = 0
+    count_maint = 0
+    
+    for vehicle in vehicles:
+        current = vehicle_odometer(vehicle["id"], fuel, maintenance, checkins)
+        history = [as_number(m.get("odometer")) for m in maintenance if m.get("vehicle_id") == vehicle["id"]]
+        if current >= maint_limit_km and (not history or current - max(history) >= maint_limit_km):
+            alerts.append(f"🔧 **Manutenção Preventiva**: Veículo **{vehicle_label(vehicle)}** precisa de revisão ({current:,.0f} km atingidos).")
+            count_maint += 1
+        
+        # IPVA Alert
+        ipva_str = vehicle.get("ipva_expiry")
+        if ipva_str:
+            try:
+                ipva_dt = date.fromisoformat(ipva_str)
+                if ipva_dt <= today:
+                    alerts.append(f"🔴 **IPVA Vencido**: **{vehicle_label(vehicle)}** venceu em {ipva_dt.strftime('%d/%m/%Y')}!")
+                    count_vencidos += 1
+                elif ipva_dt <= in_30_days:
+                    alerts.append(f"⚠️ **IPVA a Vencer**: **{vehicle_label(vehicle)}** vence em {ipva_dt.strftime('%d/%m/%Y')}.")
+                    count_atencao += 1
+            except ValueError:
+                pass
+                
+        # Seguro Alert
+        ins_str = vehicle.get("insurance_expiry")
+        if ins_str:
+            try:
+                ins_dt = date.fromisoformat(ins_str)
+                if ins_dt <= today:
+                    alerts.append(f"🔴 **Seguro Vencido**: **{vehicle_label(vehicle)}** venceu em {ins_dt.strftime('%d/%m/%Y')}!")
+                    count_vencidos += 1
+                elif ins_dt <= in_30_days:
+                    alerts.append(f"⚠️ **Seguro a Vencer**: **{vehicle_label(vehicle)}** vence em {ins_dt.strftime('%d/%m/%Y')}.")
+                    count_atencao += 1
+            except ValueError:
+                pass
+
+    for driver in drivers:
+        expiry_str = driver.get("license_expiry")
+        if expiry_str:
+            try:
+                exp_dt = date.fromisoformat(expiry_str)
+                if exp_dt <= today:
+                    alerts.append(f"🔴 **CNH Vencida**: Motorista **{driver['name']}** venceu em {exp_dt.strftime('%d/%m/%Y')}!")
+                    count_vencidos += 1
+                elif exp_dt <= in_30_days:
+                    alerts.append(f"⚠️ **CNH a Vencer**: Motorista **{driver['name']}** vence em {exp_dt.strftime('%d/%m/%Y')}.")
+                    count_atencao += 1
+            except ValueError:
+                pass
+    
+    count_tires_alert = 0
+    pos_names_short = {"DE": "Dianteiro Esq.", "DD": "Dianteiro Dir.", "TE": "Traseiro Esq.", "TD": "Traseiro Dir.", "EST": "Estepe"}
+    for t_item in tires:
+        tread = as_number(t_item.get("current_tread_mm", 8.0))
+        v_obj = next((v for v in vehicles if v["id"] == t_item.get("vehicle_id")), None)
+        v_lbl = vehicle_label(v_obj) if v_obj else "Veículo"
+        p_name = pos_names_short.get(t_item.get("position"), t_item.get("position"))
+        
+        if tread < 1.6:
+            alerts.append(f"🔴 **Pneu Crítico (< 1.6mm)**: Pneu **{p_name}** do **{v_lbl}** em **{tread:.1f} mm** (Troca imediata).")
+            count_vencidos += 1
+            count_tires_alert += 1
+        elif tread <= 3.0:
+            alerts.append(f"⚠️ **Pneu Baixo**: Pneu **{p_name}** do **{v_lbl}** em **{tread:.1f} mm**.")
+            count_atencao += 1
+            count_tires_alert += 1
+
     consumption_alerts = []
     if fleet_avg_kml > 0:
         for v in vehicles:
@@ -1264,317 +1159,423 @@ if selected_module == "📊 Painel Geral":
             if v_kml > 0 and v_kml < (0.8 * fleet_avg_kml):
                 pct_diff = ((fleet_avg_kml - v_kml) / fleet_avg_kml) * 100
                 consumption_alerts.append(
-                    f"⚠️ **Rendimento Baixo / Consumo Excessivo**: O veículo **{vehicle_label(v)}** está com rendimento de **{v_kml:.2f} km/L** "
-                    f"({pct_diff:.1f}% abaixo da média da frota de **{fleet_avg_kml:.2f} km/L**). Recomenda-se revisão mecânica ou vistoria."
+                    f"⚠️ **Consumo Anômalo**: **{vehicle_label(v)}** faz **{v_kml:.2f} km/L** ({pct_diff:.1f}% abaixo da média de {fleet_avg_kml:.2f} km/L)."
                 )
 
-    if consumption_alerts:
-        for c_alert in consumption_alerts:
-            st.markdown(f'<div class="alert-card-warning">{c_alert}</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="alert-card-success">✔️ Desempenho de consumo de todos os veículos está dentro do padrão esperado da frota!</div>', unsafe_allow_html=True)
-        
-    st.divider()
-    
-    # 📊 EFFICIENCY & CPK SUMMARY TABLE
-    st.markdown("### 📊 Eficiência & Custo por Quilômetro Rodado (CPK) por Veículo")
-    metrics_rows = []
-    for v in vehicles:
-        v_id = v["id"]
-        v_label = vehicle_label(v)
-        
-        v_fuel = [f for f in fuel if f.get("vehicle_id") == v_id]
-        v_maint = [m for m in maintenance if m.get("vehicle_id") == v_id]
-        v_checkins = [c for c in checkins if c.get("vehicle_id") == v_id]
-        v_expenses = [e for e in expenses if e.get("vehicle_id") == v_id]
-        
-        odos = []
-        for item in v_fuel + v_maint:
-            odos.append(as_number(item.get("odometer")))
-        for item in v_checkins:
-            odos.extend([as_number(item.get("odometer_start")), as_number(item.get("odometer_end"))])
-            
-        km_run = max(odos) - min(odos) if len(odos) >= 2 else 0.0
-        
-        fuel_cost = sum(as_number(f.get("cost")) for f in v_fuel)
-        maint_cost = sum(as_number(m.get("cost")) for m in v_maint)
-        exp_cost = sum(as_number(e.get("cost")) for e in v_expenses)
-        total_v_cost = fuel_cost + maint_cost + exp_cost
-        
-        liters = sum(as_number(f.get("liters")) for f in v_fuel)
-        kml = km_run / liters if liters > 0 else 0.0
-        cost_km = total_v_cost / km_run if km_run > 0 else 0.0
-        
-        metrics_rows.append({
-            "Veículo": v_label,
-            "KM Rodados": f"{km_run:,.0f} km",
-            "Combustível": f"{liters:,.1f} L",
-            "Média Consumo": f"{kml:.2f} km/L" if kml > 0 else "-",
-            "Custo Total": f"R$ {total_v_cost:,.2f}",
-            "Custo por KM (CPK)": f"R$ {cost_km:.2f}/km" if cost_km > 0 else "-",
-            "km_raw": km_run,
-            "liters_raw": liters,
-            "cpk_raw": cost_km
-        })
-        
-    if metrics_rows:
-        st.dataframe(pd.DataFrame(metrics_rows)[["Veículo", "KM Rodados", "Combustível", "Média Consumo", "Custo Total", "Custo por KM (CPK)"]], use_container_width=True, hide_index=True)
-    else:
-        st.info("Dados insuficientes para calcular métricas de eficiência.")
+    all_alerts = alerts + consumption_alerts
 
-    st.divider()
-
-    # 📊 CUSTOM SEGMENTED COST BREAKDOWN PROGRESS BAR
-    st.markdown("##### 📊 Distribuição Porcentual de Despesas da Frota no Período")
-    total_c = total_fuel + total_maint + total_fines + total_expenses
-    if total_c > 0:
-        pct_fuel = (total_fuel / total_c) * 100
-        pct_maint = (total_maint / total_c) * 100
-        pct_fines = (total_fines / total_c) * 100
-        pct_exp = (total_expenses / total_c) * 100
-        
+    # 1. CARDS DE KPIS RESUMIDOS (5 COLUNAS)
+    col_a, col_b, col_c, col_d, col_e = st.columns(5)
+    with col_a:
         st.markdown(f"""
-        <div style="display: flex; height: 28px; border-radius: 14px; overflow: hidden; margin: 15px 0 10px 0; background: rgba(128,128,128,0.15); box-shadow: inset 0 2px 4px rgba(0,0,0,0.06);">
-            {"".join([
-                f'<div style="width: {pct_fuel}%; background: linear-gradient(135deg, #3b82f6, #2563eb); text-align: center; color: white; font-size: 11px; line-height: 28px; font-weight: 600;" title="Abastecimento: R$ {total_fuel:,.2f}">⛽ {pct_fuel:.1f}%</div>' if pct_fuel > 0 else '',
-                f'<div style="width: {pct_maint}%; background: linear-gradient(135deg, #10b981, #059669); text-align: center; color: white; font-size: 11px; line-height: 28px; font-weight: 600;" title="Manutenção: R$ {total_maint:,.2f}">🔧 {pct_maint:.1f}%</div>' if pct_maint > 0 else '',
-                f'<div style="width: {pct_fines}%; background: linear-gradient(135deg, #ef4444, #dc2626); text-align: center; color: white; font-size: 11px; line-height: 28px; font-weight: 600;" title="Multas: R$ {total_fines:,.2f}">🚨 {pct_fines:.1f}%</div>' if pct_fines > 0 else '',
-                f'<div style="width: {pct_exp}%; background: linear-gradient(135deg, #a78bfa, #8b5cf6); text-align: center; color: white; font-size: 11px; line-height: 28px; font-weight: 600;" title="Outros: R$ {total_expenses:,.2f}">💸 {pct_exp:.1f}%</div>' if pct_exp > 0 else ''
-            ])}
-        </div>
-        <div style="display: flex; justify-content: space-around; font-size: 0.85rem; color: var(--text-color); opacity: 0.8; margin-bottom: 20px; flex-wrap: wrap;">
-            <div>🔵 Abastecimento: <b>R$ {total_fuel:,.2f}</b></div>
-            <div>🟢 Manutenção: <b>R$ {total_maint:,.2f}</b></div>
-            <div>🔴 Multas: <b>R$ {total_fines:,.2f}</b></div>
-            <div>🟣 Outros: <b>R$ {total_expenses:,.2f}</b></div>
+        <div class="kpi-card">
+            <div class="kpi-title">🚗 Frota Cadastrada</div>
+            <div class="kpi-value">{len(vehicles)}</div>
+            <div class="kpi-subtext"><span style="color:#10b981; font-weight:600;">{active} disp.</span> · <span style="color:#f59e0b; font-weight:600;">{in_maintenance} manut.</span></div>
         </div>
         """, unsafe_allow_html=True)
+    with col_b:
+        st.markdown(f"""
+        <div class="kpi-card">
+            <div class="kpi-title">💰 Custo Total</div>
+            <div class="kpi-value" style="color: #3b82f6;">R$ {total_cost:,.2f}</div>
+            <div class="kpi-subtext">Combustível: R$ {total_fuel:,.0f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_c:
+        st.markdown(f"""
+        <div class="kpi-card">
+            <div class="kpi-title">📈 Custo Médio CPK</div>
+            <div class="kpi-value" style="color: #8b5cf6;">{"R$ " + f"{fleet_avg_cpk:.2f}/km" if fleet_avg_cpk > 0 else "-"}</div>
+            <div class="kpi-subtext">Distância: {fleet_total_km:,.0f} km</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_d:
+        st.markdown(f"""
+        <div class="kpi-card">
+            <div class="kpi-title">⛽ Rendimento Médio</div>
+            <div class="kpi-value" style="color: #10b981;">{f"{fleet_avg_kml:.2f} km/L" if fleet_avg_kml > 0 else "-"}</div>
+            <div class="kpi-subtext">Média geral da frota</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_e:
+        badge_color = "#ef4444" if count_vencidos > 0 else ("#f59e0b" if count_atencao > 0 else "#10b981")
+        st.markdown(f"""
+        <div class="kpi-card">
+            <div class="kpi-title">🔔 Alertas da Frota</div>
+            <div class="kpi-value" style="color: {badge_color};">{len(all_alerts)}</div>
+            <div class="kpi-subtext">{count_vencidos} Críticos · {count_atencao} Atenção</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # 2. CENTRAL RESUMIDA DE ALERTAS (EXPANSÍVEL / CONCISA)
+    if all_alerts:
+        with st.expander(f"🔔 Central de Alertas Operacionais ({len(all_alerts)} pendência(s))", expanded=(count_vencidos > 0)):
+            st.markdown(f"""
+            <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
+                <span class="alert-badge" style="background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.3);">
+                    🔴 {count_vencidos} Vencido(s) / Crítico(s)
+                </span>
+                <span class="alert-badge" style="background: rgba(245,158,11,0.12); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3);">
+                    ⚠️ {count_atencao} Vencimento Próximo
+                </span>
+                <span class="alert-badge" style="background: rgba(59,130,246,0.12); color: #3b82f6; border: 1px solid rgba(59,130,246,0.3);">
+                    🔧 {count_maint} Manutenção Preventiva
+                </span>
+                <span class="alert-badge" style="background: rgba(139,92,246,0.12); color: #8b5cf6; border: 1px solid rgba(139,92,246,0.3);">
+                    🛞 {count_tires_alert} Estado dos Pneus
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            for alert in all_alerts:
+                card_class = "alert-card-danger" if "🔴" in alert else "alert-card-warning"
+                st.markdown(f'<div class="{card_class}" style="padding: 0.65rem 1rem; margin-bottom: 0.4rem; font-size: 0.86rem;">{alert}</div>', unsafe_allow_html=True)
     else:
-        st.info("Ainda não há despesas registradas no período selecionado.")
+        st.markdown('<div class="alert-card-success" style="padding: 0.65rem 1rem; font-size: 0.88rem;">✔️ Documentação, manutenções, pneus e rendimento de todos os veículos em dia!</div>', unsafe_allow_html=True)
 
-    st.divider()
+    st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
 
-    # CHARTS SECTION (PLOTLY INTERATIVOS)
-    st.subheader("Gráficos Analíticos Interativos (Plotly)")
-    chart_col1, chart_col2 = st.columns(2)
-    
-    with chart_col1:
-        st.markdown("##### ⛽ vs 🔧 Despesas Mensais por Categoria")
-        costs_data = []
-        for m in filtered_maint:
-            cost_val = as_number(m.get("cost"))
-            maint_date_str = m.get("maint_date")
-            if maint_date_str:
-                try:
-                    month_str = datetime.strptime(maint_date_str[:10], "%Y-%m-%d").strftime("%Y-%m")
-                    costs_data.append({"Mês": month_str, "Categoria": "Manutenção", "Valor": cost_val})
-                except ValueError:
-                    pass
-        for f in filtered_fuel:
-            cost_val = as_number(f.get("cost"))
-            fuel_date_str = f.get("fuel_date")
-            if fuel_date_str:
-                try:
-                    month_str = datetime.strptime(fuel_date_str[:10], "%Y-%m-%d").strftime("%Y-%m")
-                    costs_data.append({"Mês": month_str, "Categoria": "Abastecimento", "Valor": cost_val})
-                except ValueError:
-                    pass
-        for e in filtered_expenses:
-            cost_val = as_number(e.get("cost"))
-            expense_date_str = e.get("expense_date")
-            if expense_date_str:
-                try:
-                    month_str = datetime.strptime(expense_date_str[:10], "%Y-%m-%d").strftime("%Y-%m")
-                    costs_data.append({"Mês": month_str, "Categoria": "Outras Despesas", "Valor": cost_val})
-                except ValueError:
-                    pass
-        for fi in filtered_fines:
-            cost_val = as_number(fi.get("amount"))
-            fine_date_str = fi.get("fine_date")
-            if fine_date_str:
-                try:
-                    month_str = datetime.strptime(fine_date_str[:10], "%Y-%m-%d").strftime("%Y-%m")
-                    costs_data.append({"Mês": month_str, "Categoria": "Multas", "Valor": cost_val})
-                except ValueError:
-                    pass
-                    
-        if costs_data:
-            df_costs = pd.DataFrame(costs_data)
-            df_grouped = df_costs.groupby(["Mês", "Categoria"])["Valor"].sum().reset_index()
-            fig = px.bar(
-                df_grouped,
-                x="Mês",
-                y="Valor",
-                color="Categoria",
-                barmode="group",
-                text_auto=".2s",
-                labels={"Valor": "Custo (R$)"},
-                color_discrete_map={
-                    "Abastecimento": "#3b82f6",
-                    "Manutenção": "#10b981",
-                    "Multas": "#ef4444",
-                    "Outras Despesas": "#8b5cf6"
-                }
-            )
-            fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=350)
-            apply_premium_chart_theme(fig)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Ainda não há dados suficientes para gerar o gráfico de custos por categoria.")
+    # 3. PAINEL PRINCIPAL EM 2 COLUNAS COMPACTAS
+    dash_left, dash_right = st.columns([1.1, 0.9])
 
-    with chart_col2:
-        st.markdown("##### 🍩 Composição Financeira da Frota no Período")
+    with dash_left:
+        st.markdown("##### 📊 Análise Financeira & Custos")
+        
+        # Barra de Distribuição de Despesas
         if total_cost > 0:
-            df_pie = pd.DataFrame([
-                {"Categoria": "Abastecimento", "Valor": total_fuel},
-                {"Categoria": "Manutenção", "Valor": total_maint},
-                {"Categoria": "Multas", "Valor": total_fines},
-                {"Categoria": "Outras Despesas", "Valor": total_expenses}
-            ])
-            df_pie = df_pie[df_pie["Valor"] > 0]
-            fig_pie = px.pie(
-                df_pie,
-                names="Categoria",
-                values="Valor",
-                hole=0.45,
-                color="Categoria",
-                color_discrete_map={
-                    "Abastecimento": "#3b82f6",
-                    "Manutenção": "#10b981",
-                    "Multas": "#ef4444",
-                    "Outras Despesas": "#8b5cf6"
-                }
-            )
-            fig_pie.update_traces(textinfo="percent+label", hovertemplate="%{label}: R$ %{value:,.2f}")
-            fig_pie.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=350)
-            apply_premium_chart_theme(fig_pie)
-            st.plotly_chart(fig_pie, use_container_width=True)
-        else:
-            st.info("Nenhuma despesa no período para exibir o gráfico de composição.")
+            pct_fuel = (total_fuel / total_cost) * 100
+            pct_maint = (total_maint / total_cost) * 100
+            pct_fines = (total_fines / total_cost) * 100
+            pct_exp = (total_expenses / total_cost) * 100
+            
+            st.markdown(f"""
+            <div style="display: flex; height: 22px; border-radius: 11px; overflow: hidden; margin: 8px 0 10px 0; background: rgba(128,128,128,0.15);">
+                {"".join([
+                    f'<div style="width: {pct_fuel}%; background: #3b82f6; text-align: center; color: white; font-size: 10px; line-height: 22px; font-weight: 700;" title="Abastecimento: R$ {total_fuel:,.2f}">⛽ {pct_fuel:.0f}%</div>' if pct_fuel > 4 else '',
+                    f'<div style="width: {pct_maint}%; background: #10b981; text-align: center; color: white; font-size: 10px; line-height: 22px; font-weight: 700;" title="Manutenção: R$ {total_maint:,.2f}">🔧 {pct_maint:.0f}%</div>' if pct_maint > 4 else '',
+                    f'<div style="width: {pct_fines}%; background: #ef4444; text-align: center; color: white; font-size: 10px; line-height: 22px; font-weight: 700;" title="Multas: R$ {total_fines:,.2f}">🚨 {pct_fines:.0f}%</div>' if pct_fines > 4 else '',
+                    f'<div style="width: {pct_exp}%; background: #8b5cf6; text-align: center; color: white; font-size: 10px; line-height: 22px; font-weight: 700;" title="Outros: R$ {total_expenses:,.2f}">💸 {pct_exp:.0f}%</div>' if pct_exp > 4 else ''
+                ])}
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.78rem; opacity: 0.85; margin-bottom: 12px; flex-wrap: wrap;">
+                <span>🔵 Abast.: <b>R$ {total_fuel:,.2f}</b></span>
+                <span>🟢 Maint.: <b>R$ {total_maint:,.2f}</b></span>
+                <span>🔴 Multas: <b>R$ {total_fines:,.2f}</b></span>
+                <span>🟣 Outros: <b>R$ {total_expenses:,.2f}</b></span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        # Gráficos Analíticos unificados em ABAS (TABS)
+        chart_tabs = st.tabs(["🍩 Composição", "📊 Por Categoria", "📈 Evolução Mensal", "🏆 Top Veículos"])
+        
+        with chart_tabs[0]:
+            if total_cost > 0:
+                df_pie = pd.DataFrame([
+                    {"Categoria": "Abastecimento", "Valor": total_fuel},
+                    {"Categoria": "Manutenção", "Valor": total_maint},
+                    {"Categoria": "Multas", "Valor": total_fines},
+                    {"Categoria": "Outras Despesas", "Valor": total_expenses}
+                ])
+                df_pie = df_pie[df_pie["Valor"] > 0]
+                fig_pie = px.pie(
+                    df_pie,
+                    names="Categoria",
+                    values="Valor",
+                    hole=0.45,
+                    color="Categoria",
+                    color_discrete_map={
+                        "Abastecimento": "#3b82f6",
+                        "Manutenção": "#10b981",
+                        "Multas": "#ef4444",
+                        "Outras Despesas": "#8b5cf6"
+                    }
+                )
+                fig_pie.update_traces(textinfo="percent+label", hovertemplate="%{label}: R$ %{value:,.2f}")
+                fig_pie.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=300)
+                apply_premium_chart_theme(fig_pie)
+                st.plotly_chart(fig_pie, use_container_width=True)
+            else:
+                st.info("Nenhuma despesa no período.")
 
-    st.divider()
-    st.subheader("Evolução & Análise de Custos")
-    col_chart3, col_chart4 = st.columns(2)
-    
-    with col_chart3:
-        st.markdown("##### 📈 Evolução de Gastos Mensais Totais")
-        total_monthly_costs = {}
-        for m in filtered_maint:
-            cost_val = as_number(m.get("cost"))
-            d_str = m.get("maint_date") or m.get("created_at")
-            if d_str:
-                try:
-                    month_str = datetime.strptime(d_str[:10], "%Y-%m-%d").strftime("%Y-%m")
-                    total_monthly_costs[month_str] = total_monthly_costs.get(month_str, 0) + cost_val
-                except ValueError:
-                    pass
-        for f in filtered_fuel:
-            cost_val = as_number(f.get("cost"))
-            d_str = f.get("fuel_date") or f.get("created_at")
-            if d_str:
-                try:
-                    month_str = datetime.strptime(d_str[:10], "%Y-%m-%d").strftime("%Y-%m")
-                    total_monthly_costs[month_str] = total_monthly_costs.get(month_str, 0) + cost_val
-                except ValueError:
-                    pass
-        for fi in filtered_fines:
-            cost_val = as_number(fi.get("amount"))
-            d_str = fi.get("fine_date") or fi.get("created_at")
-            if d_str:
-                try:
-                    month_str = datetime.strptime(d_str[:10], "%Y-%m-%d").strftime("%Y-%m")
-                    total_monthly_costs[month_str] = total_monthly_costs.get(month_str, 0) + cost_val
-                except ValueError:
-                    pass
-        for e in filtered_expenses:
-            cost_val = as_number(e.get("cost"))
-            d_str = e.get("expense_date") or e.get("created_at")
-            if d_str:
-                try:
-                    month_str = datetime.strptime(d_str[:10], "%Y-%m-%d").strftime("%Y-%m")
-                    total_monthly_costs[month_str] = total_monthly_costs.get(month_str, 0) + cost_val
-                except ValueError:
-                    pass
-                    
-        if total_monthly_costs:
-            df_evo = pd.DataFrame(list(total_monthly_costs.items()), columns=["Mês", "Custo Total (R$)"]).sort_values(by="Mês")
-            fig_evo = px.line(
-                df_evo,
-                x="Mês",
-                y="Custo Total (R$)",
-                markers=True,
-                labels={"Custo Total (R$)": "Total (R$)"}
-            )
-            fig_evo.update_traces(line=dict(color="#3b82f6", width=3), marker=dict(size=8, color="#2563eb"))
-            fig_evo.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=350)
-            apply_premium_chart_theme(fig_evo)
-            st.plotly_chart(fig_evo, use_container_width=True)
-        else:
-            st.info("Ainda não há dados suficientes para traçar a evolução de despesas.")
+        with chart_tabs[1]:
+            costs_data = []
+            for m in filtered_maint:
+                cost_val = as_number(m.get("cost"))
+                maint_date_str = m.get("maint_date")
+                if maint_date_str:
+                    try:
+                        month_str = datetime.strptime(maint_date_str[:10], "%Y-%m-%d").strftime("%Y-%m")
+                        costs_data.append({"Mês": month_str, "Categoria": "Manutenção", "Valor": cost_val})
+                    except ValueError:
+                        pass
+            for f in filtered_fuel:
+                cost_val = as_number(f.get("cost"))
+                fuel_date_str = f.get("fuel_date")
+                if fuel_date_str:
+                    try:
+                        month_str = datetime.strptime(fuel_date_str[:10], "%Y-%m-%d").strftime("%Y-%m")
+                        costs_data.append({"Mês": month_str, "Categoria": "Abastecimento", "Valor": cost_val})
+                    except ValueError:
+                        pass
+            for e in filtered_expenses:
+                cost_val = as_number(e.get("cost"))
+                expense_date_str = e.get("expense_date")
+                if expense_date_str:
+                    try:
+                        month_str = datetime.strptime(expense_date_str[:10], "%Y-%m-%d").strftime("%Y-%m")
+                        costs_data.append({"Mês": month_str, "Categoria": "Outras Despesas", "Valor": cost_val})
+                    except ValueError:
+                        pass
+            for fi in filtered_fines:
+                cost_val = as_number(fi.get("amount"))
+                fine_date_str = fi.get("fine_date")
+                if fine_date_str:
+                    try:
+                        month_str = datetime.strptime(fine_date_str[:10], "%Y-%m-%d").strftime("%Y-%m")
+                        costs_data.append({"Mês": month_str, "Categoria": "Multas", "Valor": cost_val})
+                    except ValueError:
+                        pass
+                        
+            if costs_data:
+                df_costs = pd.DataFrame(costs_data)
+                df_grouped = df_costs.groupby(["Mês", "Categoria"])["Valor"].sum().reset_index()
+                fig_cat = px.bar(
+                    df_grouped,
+                    x="Mês",
+                    y="Valor",
+                    color="Categoria",
+                    barmode="group",
+                    text_auto=".2s",
+                    labels={"Valor": "Custo (R$)"},
+                    color_discrete_map={
+                        "Abastecimento": "#3b82f6",
+                        "Manutenção": "#10b981",
+                        "Multas": "#ef4444",
+                        "Outras Despesas": "#8b5cf6"
+                    }
+                )
+                fig_cat.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=300)
+                apply_premium_chart_theme(fig_cat)
+                st.plotly_chart(fig_cat, use_container_width=True)
+            else:
+                st.info("Sem dados de despesas por categoria no período.")
 
-    with col_chart4:
-        st.markdown("##### 🏆 Top Veículos por Custo Total no Período")
-        v_costs = []
+        with chart_tabs[2]:
+            total_monthly_costs = {}
+            for m in filtered_maint:
+                cost_val = as_number(m.get("cost"))
+                d_str = m.get("maint_date") or m.get("created_at")
+                if d_str:
+                    try:
+                        month_str = datetime.strptime(d_str[:10], "%Y-%m-%d").strftime("%Y-%m")
+                        total_monthly_costs[month_str] = total_monthly_costs.get(month_str, 0) + cost_val
+                    except ValueError:
+                        pass
+            for f in filtered_fuel:
+                cost_val = as_number(f.get("cost"))
+                d_str = f.get("fuel_date") or f.get("created_at")
+                if d_str:
+                    try:
+                        month_str = datetime.strptime(d_str[:10], "%Y-%m-%d").strftime("%Y-%m")
+                        total_monthly_costs[month_str] = total_monthly_costs.get(month_str, 0) + cost_val
+                    except ValueError:
+                        pass
+            for fi in filtered_fines:
+                cost_val = as_number(fi.get("amount"))
+                d_str = fi.get("fine_date") or fi.get("created_at")
+                if d_str:
+                    try:
+                        month_str = datetime.strptime(d_str[:10], "%Y-%m-%d").strftime("%Y-%m")
+                        total_monthly_costs[month_str] = total_monthly_costs.get(month_str, 0) + cost_val
+                    except ValueError:
+                        pass
+            for e in filtered_expenses:
+                cost_val = as_number(e.get("cost"))
+                d_str = e.get("expense_date") or e.get("created_at")
+                if d_str:
+                    try:
+                        month_str = datetime.strptime(d_str[:10], "%Y-%m-%d").strftime("%Y-%m")
+                        total_monthly_costs[month_str] = total_monthly_costs.get(month_str, 0) + cost_val
+                    except ValueError:
+                        pass
+                        
+            if total_monthly_costs:
+                df_evo = pd.DataFrame(list(total_monthly_costs.items()), columns=["Mês", "Custo Total (R$)"]).sort_values(by="Mês")
+                fig_evo = px.line(
+                    df_evo,
+                    x="Mês",
+                    y="Custo Total (R$)",
+                    markers=True,
+                    labels={"Custo Total (R$)": "Total (R$)"}
+                )
+                fig_evo.update_traces(line=dict(color="#3b82f6", width=3), marker=dict(size=8, color="#2563eb"))
+                fig_evo.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=300)
+                apply_premium_chart_theme(fig_evo)
+                st.plotly_chart(fig_evo, use_container_width=True)
+            else:
+                st.info("Sem dados de evolução temporal no período.")
+
+        with chart_tabs[3]:
+            v_costs = []
+            for v in vehicles:
+                v_id = v["id"]
+                fuel_cost = sum(as_number(f.get("cost")) for f in filtered_fuel if f.get("vehicle_id") == v_id)
+                maint_cost = sum(as_number(m.get("cost")) for m in filtered_maint if m.get("vehicle_id") == v_id)
+                exp_cost = sum(as_number(e.get("cost")) for e in filtered_expenses if e.get("vehicle_id") == v_id)
+                v_costs.append({"Veículo": vehicle_label(v), "Gasto Total": fuel_cost + maint_cost + exp_cost})
+                
+            if v_costs and any(item["Gasto Total"] > 0 for item in v_costs):
+                df_v_costs = pd.DataFrame(v_costs).sort_values(by="Gasto Total", ascending=False).head(5)
+                fig_v_costs = px.bar(
+                    df_v_costs,
+                    x="Veículo",
+                    y="Gasto Total",
+                    text_auto=".2s",
+                    color="Gasto Total",
+                    color_continuous_scale="Blues",
+                    labels={"Gasto Total": "Gasto (R$)"}
+                )
+                fig_v_costs.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=300, coloraxis_showscale=False)
+                apply_premium_chart_theme(fig_v_costs)
+                st.plotly_chart(fig_v_costs, use_container_width=True)
+            else:
+                st.info("Sem gastos registrados por veículo no período.")
+
+    with dash_right:
+        st.markdown("##### 🚗 Eficiência & CPK por Veículo")
+        metrics_rows = []
         for v in vehicles:
             v_id = v["id"]
-            fuel_cost = sum(as_number(f.get("cost")) for f in filtered_fuel if f.get("vehicle_id") == v_id)
-            maint_cost = sum(as_number(m.get("cost")) for m in filtered_maint if m.get("vehicle_id") == v_id)
-            exp_cost = sum(as_number(e.get("cost")) for e in filtered_expenses if e.get("vehicle_id") == v_id)
-            v_costs.append({"Veículo": vehicle_label(v), "Gasto Total": fuel_cost + maint_cost + exp_cost})
+            v_label = vehicle_label(v)
             
-        if v_costs and any(item["Gasto Total"] > 0 for item in v_costs):
-            df_v_costs = pd.DataFrame(v_costs).sort_values(by="Gasto Total", ascending=False).head(5)
-            fig_v_costs = px.bar(
-                df_v_costs,
-                x="Veículo",
-                y="Gasto Total",
-                text_auto=".2s",
-                color="Gasto Total",
-                color_continuous_scale="Blues",
-                labels={"Gasto Total": "Gasto (R$)"}
-            )
-            fig_v_costs.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=350, coloraxis_showscale=False)
-            apply_premium_chart_theme(fig_v_costs)
-            st.plotly_chart(fig_v_costs, use_container_width=True)
+            v_fuel = [f for f in filtered_fuel if f.get("vehicle_id") == v_id]
+            v_maint = [m for m in filtered_maint if m.get("vehicle_id") == v_id]
+            v_checkins = [c for c in checkins if c.get("vehicle_id") == v_id]
+            v_exp = [e for e in filtered_expenses if e.get("vehicle_id") == v_id]
+            
+            odos = []
+            for item in v_fuel + v_maint:
+                odos.append(as_number(item.get("odometer")))
+            for item in v_checkins:
+                odos.extend([as_number(item.get("odometer_start")), as_number(item.get("odometer_end"))])
+                
+            km_run = max(odos) - min(odos) if len(odos) >= 2 else 0.0
+            
+            fuel_cost = sum(as_number(f.get("cost")) for f in v_fuel)
+            maint_cost = sum(as_number(m.get("cost")) for m in v_maint)
+            exp_cost = sum(as_number(e.get("cost")) for e in v_exp)
+            total_v_cost = fuel_cost + maint_cost + exp_cost
+            
+            liters = sum(as_number(f.get("liters")) for f in v_fuel)
+            kml = km_run / liters if liters > 0 else 0.0
+            cost_km = total_v_cost / km_run if km_run > 0 else 0.0
+            
+            metrics_rows.append({
+                "Veículo": v_label,
+                "KM Rodados": f"{km_run:,.0f} km",
+                "Média Consumo": f"{kml:.2f} km/L" if kml > 0 else "-",
+                "Custo Total": f"R$ {total_v_cost:,.2f}",
+                "CPK": f"R$ {cost_km:.2f}/km" if cost_km > 0 else "-",
+                "km_raw": km_run,
+                "liters_raw": liters,
+                "cpk_raw": cost_km
+            })
+            
+        if metrics_rows:
+            df_metrics = pd.DataFrame(metrics_rows)[["Veículo", "Média Consumo", "Custo Total", "CPK"]]
+            st.dataframe(df_metrics, use_container_width=True, hide_index=True, height=220)
         else:
-            st.info("Ainda não há gastos registrados para os veículos ativos no período.")
+            st.info("Sem dados de eficiência.")
 
-    # 📋 RELATÓRIO GERENCIAL EXECUTIVO PARA GESTORES
-    st.divider()
-    st.markdown("### 📋 Relatório Gerencial Executivo de Tomada de Decisão")
-    st.caption("Gere e exporte um documento PDF consolidado contendo o resumo financeiro de despesas, métricas de eficiência de combustível, rankings de custos e todos os alertas operacionais do período selecionado para envio à diretoria e gestores.")
-    
-    period_label = f"{selected_month_name} / {selected_year}"
-    kpis_pdf = {
-        "fuel": total_fuel,
-        "maint": total_maint,
-        "fines": total_fines,
-        "expenses": total_expenses,
-        "total": total_cost,
-        "active_vehicles": len(vehicles)
-    }
-    
-    # Junta todos os alertas gerados no Dashboard
-    all_current_alerts = alerts + (consumption_alerts if 'consumption_alerts' in locals() else [])
-    
-    try:
-        pdf_exec_data = generate_executive_pdf_report(
-            period_label=period_label,
-            kpis=kpis_pdf,
-            metrics_list=metrics_rows,
-            alerts_list=all_current_alerts,
-            top_vehicles=v_costs
-        )
-        
-        st.download_button(
-            label="📥 Gerar Relatório Executivo Consolidado (PDF)",
-            data=pdf_exec_data,
-            file_name=f"relatorio_gerencial_executivo_{selected_month_name.lower()}_{selected_year}.pdf",
-            mime="application/pdf",
-            use_container_width=True
-        )
-    except Exception as e_exec_pdf:
-        st.error(f"Erro ao preparar o relatório executivo: {e_exec_pdf}")
+        st.markdown("##### 📅 Vencimentos no Período")
+        vencimentos_rows = []
+        for vehicle in vehicles:
+            ipva_str = vehicle.get("ipva_expiry")
+            if ipva_str:
+                try:
+                    dt = datetime.strptime(ipva_str[:10], "%Y-%m-%d")
+                    match_y = (selected_year == "Todos" or dt.year == int(selected_year))
+                    match_m = (selected_month is None or dt.month == selected_month)
+                    if match_y and match_m:
+                        vencimentos_rows.append({
+                            "Recurso": vehicle_label(vehicle),
+                            "Tipo": "IPVA",
+                            "Data": dt.strftime("%d/%m/%Y"),
+                            "Status": "🔴 Vencido" if dt.date() < today else ("⚠️ Próximo" if dt.date() <= in_30_days else "🟢 Em dia")
+                        })
+                except ValueError:
+                    pass
+                    
+            ins_str = vehicle.get("insurance_expiry")
+            if ins_str:
+                try:
+                    dt = datetime.strptime(ins_str[:10], "%Y-%m-%d")
+                    match_y = (selected_year == "Todos" or dt.year == int(selected_year))
+                    match_m = (selected_month is None or dt.month == selected_month)
+                    if match_y and match_m:
+                        vencimentos_rows.append({
+                            "Recurso": vehicle_label(vehicle),
+                            "Tipo": "Seguro",
+                            "Data": dt.strftime("%d/%m/%Y"),
+                            "Status": "🔴 Vencido" if dt.date() < today else ("⚠️ Próximo" if dt.date() <= in_30_days else "🟢 Em dia")
+                        })
+                except ValueError:
+                    pass
+
+        for driver in drivers:
+            expiry_str = driver.get("license_expiry")
+            if expiry_str:
+                try:
+                    dt = datetime.strptime(expiry_str[:10], "%Y-%m-%d")
+                    match_y = (selected_year == "Todos" or dt.year == int(selected_year))
+                    match_m = (selected_month is None or dt.month == selected_month)
+                    if match_y and match_m:
+                        vencimentos_rows.append({
+                            "Recurso": driver.get("name", "Motorista"),
+                            "Tipo": "CNH",
+                            "Data": dt.strftime("%d/%m/%Y"),
+                            "Status": "🔴 Vencido" if dt.date() < today else ("⚠️ Próximo" if dt.date() <= in_30_days else "🟢 Em dia")
+                        })
+                except ValueError:
+                    pass
+
+        if vencimentos_rows:
+            st.dataframe(pd.DataFrame(vencimentos_rows), use_container_width=True, hide_index=True, height=180)
+        else:
+            st.info("Nenhum vencimento no período.")
+
+    # 4. RELATÓRIO EXECUTIVO COMPACTO
+    st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
+    with st.expander("📄 Exportar Relatório Gerencial Executivo (PDF)", expanded=False):
+        st.caption("Gere e baixe um documento PDF consolidado contendo o resumo financeiro, tabela de eficiência e alertas do período para envio à diretoria.")
+        period_label = f"{selected_month_name} / {selected_year}"
+        kpis_pdf = {
+            "fuel": total_fuel,
+            "maint": total_maint,
+            "fines": total_fines,
+            "expenses": total_expenses,
+            "total": total_cost,
+            "active_vehicles": len(vehicles)
+        }
+        try:
+            pdf_exec_data = generate_executive_pdf_report(
+                period_label=period_label,
+                kpis=kpis_pdf,
+                metrics_list=metrics_rows,
+                alerts_list=all_alerts,
+                top_vehicles=v_costs if 'v_costs' in locals() else []
+            )
+            
+            st.download_button(
+                label="📥 Baixar Relatório Executivo (PDF)",
+                data=pdf_exec_data,
+                file_name=f"relatorio_gerencial_executivo_{selected_month_name.lower()}_{selected_year}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+        except Exception as e_exec_pdf:
+            st.error(f"Erro ao preparar o relatório executivo: {e_exec_pdf}")
 
 elif selected_module == "👥 Veículos e Motoristas":
     st.subheader("Gerenciamento de Cadastro")
